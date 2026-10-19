@@ -44,8 +44,24 @@ export function Pos() {
   const { business, branchId } = useNexo();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQ(q), 180);
+    return () => window.clearTimeout(timer);
+  }, [q]);
   const [category, setCategory] = useState("");
-  const [lines, setLines] = useState<Line[]>([]);
+  const cartStorageKey = `nexo-cart:${business.id}:${branchId}`;
+  const [lines, setLines] = useState<Line[]>(() => {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(cartStorageKey) || "[]") as unknown;
+      if (!Array.isArray(stored)) return [];
+      return stored.filter((row): row is Line => Boolean(row && typeof row === "object" &&
+        "productId" in row && typeof row.productId === "string" && "qty" in row &&
+        typeof row.qty === "number" && Number.isInteger(row.qty) && row.qty > 0 &&
+        "name" in row && typeof row.name === "string" && "unitPriceCents" in row &&
+        typeof row.unitPriceCents === "number" && Number.isFinite(row.unitPriceCents)));
+    } catch { return []; }
+  });
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [orderDiscount, setOrderDiscount] = useState("0");
   const [method, setMethod] = useState<"cash" | "transfer" | "card" | "credit" | "mixed">("cash");
@@ -56,12 +72,16 @@ export function Pos() {
   const [cartOpen, setCartOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [manualCode, setManualCode] = useState("");
+  const [lastScanned, setLastScanned] = useState("");
+  useEffect(() => {
+    try { sessionStorage.setItem(cartStorageKey, JSON.stringify(lines)); } catch { /* unavailable */ }
+  }, [cartStorageKey, lines]);
   const [receipt, setReceipt] = useState<SaleDoc | null>(null);
   const [busy, setBusy] = useState(false);
   const [outbox, setOutbox] = useState(0);
   const products = useQuery({
-    queryKey: ["products", business.id, branchId, q],
-    queryFn: () => listProductsFn({ data: { businessId: business.id, branchId, query: q } }),
+    queryKey: ["products", business.id, branchId, debouncedQ],
+    queryFn: () => listProductsFn({ data: { businessId: business.id, branchId, query: debouncedQ } }),
   });
   const customers = useQuery({
     queryKey: ["customers", business.id],
@@ -75,10 +95,14 @@ export function Pos() {
   const customer = customers.data?.find((row) => row.id === customerId) ?? null;
 
   useEffect(() => {
-    setOutbox(readOutbox().length);
+    setOutbox(readOutbox().filter((job) => job.businessId === business.id).length);
+    let flushing = false;
     const flush = async () => {
-      const queue = readOutbox();
-      if (!queue.length) return;
+      if (flushing) return;
+      flushing = true;
+      // Only sync sales for the currently selected business.
+      const queue = readOutbox().filter((job) => job.businessId === business.id);
+      if (!queue.length) { flushing = false; return; }
       const left: CheckoutInput[] = [];
       for (const job of queue) {
         try {
@@ -88,16 +112,23 @@ export function Pos() {
           left.push(job);
         }
       }
-      localStorage.setItem(OUTBOX, JSON.stringify(left));
-      setOutbox(left.length);
+      // Never overwrite newly queued sales while a previous batch was being synchronized.
+      const inBatch = new Set(queue.map((job) => job.clientId));
+      const newer = readOutbox().filter((job) => !inBatch.has(job.clientId));
+      const remaining = [...left, ...newer];
+      localStorage.setItem(OUTBOX, JSON.stringify(remaining));
+      setOutbox(remaining.filter((job) => job.businessId === business.id).length);
+      flushing = false;
       if (left.length !== queue.length) {
         toast.success("Se sincronizaron ventas pendientes");
         void qc.invalidateQueries();
       }
     };
     void flush();
-    window.addEventListener("online", () => void flush());
-  }, [qc]);
+    const onOnline = () => void flush();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [qc, business.id]);
 
   const priced = useMemo(() => {
     return lines.map((line) => {
@@ -143,22 +174,22 @@ export function Pos() {
     totalError = error instanceof Error ? error.message : "Revise el carrito";
   }
 
-  function addProduct(product: Product, note = "") {
+  function addProduct(product: Product, note = ""): boolean {
     if (!product.active) {
       toast.error("Ese producto está inactivo");
-      return;
+      return false;
     }
     if (product.expiresOn && product.expiresOn < today) {
       toast.error(`${product.name} está vencido`);
-      return;
+      return false;
     }
     if (product.regulated && !note) {
       const typed = window.prompt(`Referencia de receta o autorización para ${product.name}`) ?? "";
-      if (!typed.trim()) return;
+      if (!typed.trim()) return false;
       note = typed.trim();
     }
     setLines((current) => {
-      const found = current.find((line) => line.productId === product.id && !line.priceTouched);
+      const found = current.find((line) => line.productId === product.id);
       if (found) return current.map((line) => (line === found ? { ...line, qty: line.qty + 1, note: note || line.note } : line));
       return [
         ...current,
@@ -175,23 +206,39 @@ export function Pos() {
         },
       ];
     });
-    setCartOpen(true);
     navigator.vibrate?.(12);
+    return true;
   }
 
-  async function onScan(raw: string) {
-    const result = await resolveCodeFn({ data: { businessId: business.id, branchId, raw } });
-    if (!result.ok) {
-      toast.error(result.error);
-      return;
+  async function onScan(raw: string): Promise<boolean> {
+    if (!raw.trim()) { toast.error("Ingrese un código válido"); return false; }
+    try {
+      const result = await resolveCodeFn({ data: { businessId: business.id, branchId, raw: raw.trim() } });
+      if (!result.ok) { toast.error(result.error); return false; }
+      if (!addProduct(result.data)) return false;
+      setLastScanned(result.data.name);
+      setManualCode("");
+      return true;
+    } catch {
+      toast.error("No se pudo consultar el producto. Revise su conexión.");
+      return false;
     }
-    addProduct(result.data);
-    setScanOpen(false);
-    setManualCode("");
   }
 
   async function sell() {
-    if (!totals || !priced.length) return;
+    if (busy || !totals || !priced.length) return;
+    if (method === "credit" && !customerId) {
+      toast.error("Seleccione un cliente para vender fiado");
+      return;
+    }
+    const paid = tendered.trim() ? Math.round(Number(tendered) * 100) : totals.totalCents;
+    const part = Math.round(Number(cashPart || 0) * 100);
+    if ((method === "cash" && (!Number.isFinite(paid) || paid < totals.totalCents)) ||
+        (method === "mixed" && (!Number.isFinite(part) || part <= 0 || part >= totals.totalCents ||
+          (tendered.trim() && (!Number.isFinite(paid) || paid < part))))) {
+      toast.error("Revise el efectivo: el importe debe cubrir la cantidad que se cobra.");
+      return;
+    }
     const cashCents = method === "mixed" ? Math.round(Number(cashPart || 0) * 100) : method === "cash" ? totals.totalCents : 0;
     const rest = totals.totalCents - cashCents;
     const payments: CheckoutInput["payments"] = [];
@@ -202,8 +249,7 @@ export function Pos() {
     } else if (method === "mixed" && rest > 0) {
       payments.push({ method: "transfer", amountCents: rest, reference, confirmed });
     }
-    const tender =
-      cashCents > 0 ? Math.max(cashCents, Math.round(Number((tendered || cashCents / 100).toString()) * 100) || cashCents) : 0;
+    const tender = cashCents > 0 ? Math.max(cashCents, tendered.trim() ? paid : cashCents) : 0;
     const payload: CheckoutInput = {
       businessId: business.id,
       branchId,
@@ -223,31 +269,44 @@ export function Pos() {
     };
     setBusy(true);
     try {
-      const result = await checkoutFn({ data: payload });
-      if (!result.ok) {
-        toast.error(result.error);
+      let result: Awaited<ReturnType<typeof checkoutFn>>;
+      try {
+        result = await checkoutFn({ data: payload });
+      } catch {
+        // A dropped response can arrive AFTER the server committed the sale.
+        // Keep this exact clientId when replaying so the backend can deduplicate.
+        const queue = readOutbox();
+        if (!queue.some((job) => job.clientId === payload.clientId)) queue.push(payload);
+        localStorage.setItem(OUTBOX, JSON.stringify(queue));
+        setOutbox(queue.filter((job) => job.businessId === business.id).length);
+        toast.message("Venta pendiente de verificar. No la cobre otra vez; se sincronizará con el mismo identificador.");
+        setLines([]);
+        setCartOpen(false);
         return;
       }
+      if (!result.ok) { toast.error(result.error); return; }
       toast.success(result.data.idempotent ? "Esa venta ya estaba registrada" : `Venta ${result.data.number}`);
-      const doc = await getSaleFn({ data: { businessId: business.id, saleId: result.data.saleId } });
-      setReceipt(doc);
+      // The sale has been committed; a receipt retrieval failure must never queue it again.
       setLines([]);
       setCartOpen(false);
+      setCustomerId(null);
+      setOrderDiscount("0");
+      setTendered("");
       void qc.invalidateQueries();
-    } catch {
-      const queue = readOutbox();
-      queue.push(payload);
-      localStorage.setItem(OUTBOX, JSON.stringify(queue));
-      setOutbox(queue.length);
-      toast.message("Sin conexión. La venta quedó guardada en este teléfono.");
-      setLines([]);
-      setCartOpen(false);
+      try {
+        const doc = await getSaleFn({ data: { businessId: business.id, saleId: result.data.saleId } });
+        setReceipt(doc);
+      } catch {
+        toast.error("Venta registrada. Consulte el historial para imprimir el comprobante.");
+      }
     } finally {
       setBusy(false);
     }
   }
 
-  const visible = (products.data ?? []).filter((product) => !category || product.categoryName === category);
+  const visible = (products.data ?? [])
+    .filter((product) => !category || product.categoryName === category)
+    .sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name, "es"));
   const categories = [...new Set((products.data ?? []).map((product) => product.categoryName).filter(Boolean))];
   const favorites = (products.data ?? []).filter((product) => product.favorite);
 
@@ -284,30 +343,64 @@ export function Pos() {
           ))}
         </div>
       )}
-      <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {visible.map((product) => (
-          <button key={product.id} type="button" className="card flex w-full items-center gap-3 px-3 py-2 text-left" onClick={() => addProduct(product)}>
+          <button key={product.id} type="button" className="card flex flex-col gap-2 p-3 text-left"
+            aria-label={`Agregar ${product.name} al carrito`} onClick={() => addProduct(product)}>
             {product.photo ? (
-              <img src={product.photo} alt="" className="h-12 w-12 rounded-xl object-cover" />
+              <img src={product.photo} alt="" className="h-20 w-full rounded-xl object-contain" loading="lazy" />
             ) : (
-              <span className="grid h-12 w-12 place-items-center rounded-xl bg-teal-soft text-xs text-teal">QR</span>
+              <span className="grid h-20 w-full place-items-center rounded-xl bg-teal-soft text-sm text-teal">Producto</span>
             )}
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{product.name}</span>
-              <span className="text-sm text-muted">
-                {money(product.priceCents, business.currency)} · hay {product.stock} {product.unit}
-                {product.expiresOn ? ` · vence ${product.expiresOn}` : ""}
-                {product.isDemo ? " · demo" : ""}
-              </span>
-            </span>
+            <span className="line-clamp-2 min-h-10 text-sm font-semibold">{product.name}</span>
+            <span className="font-semibold tabular-nums">{money(product.priceCents, business.currency)}</span>
+            <span className="text-xs text-muted">Hay {product.stock} {product.unit}</span>
+            {product.favorite && <span className="text-xs text-teal">★ Favorito</span>}
           </button>
         ))}
-        {products.isSuccess && visible.length === 0 && <p className="text-sm text-muted">No hay productos para mostrar. Regístrelos en Inventario.</p>}
+        {products.isSuccess && visible.length === 0 && <p className="col-span-2 text-sm text-muted">No hay productos. Regístrelos en Inventario.</p>}
       </div>
-      <button type="button" className="fixed inset-x-4 bottom-24 z-20 min-h-12 rounded-2xl bg-ink px-4 text-paper lg:left-72" onClick={() => setCartOpen(true)}>
-        Carrito · {priced.reduce((s, line) => s + line.qty, 0)} · {money(totals?.totalCents ?? 0, business.currency)}
+      <section className="card space-y-3 p-3" aria-label="Carrito actual">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-xl">Carrito · {priced.reduce((count, line) => count + line.qty, 0)} unidades</h2>
+          {priced.length > 0 && <Button type="button" tone="ghost" onClick={() => {
+            if (window.confirm("¿Vaciar el carrito?")) setLines([]);
+          }}>Vaciar</Button>}
+        </div>
+        {priced.length === 0 && <p className="text-sm text-muted">Busque un producto o escanee su QR para comenzar.</p>}
+        {priced.map((line) => (
+          <div key={line.productId} className="flex items-center gap-2 border-b border-line pb-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{line.name}</p>
+              <p className="text-xs text-muted tabular-nums">{money(line.unitPriceCents * line.qty, business.currency)}</p>
+            </div>
+            <Button type="button" tone="ghost" aria-label={`Quitar uno de ${line.name}`}
+              onClick={() => setLines((rows) => rows.flatMap((row) => row.productId === line.productId
+                ? row.qty > 1 ? [{ ...row, qty: row.qty - 1 }] : [] : [row]))}>−</Button>
+            <TextInput aria-label={`Cantidad de ${line.name}`} type="number" min="1" step="1" inputMode="numeric"
+              className="w-16 px-1 text-center" value={line.qty} onChange={(event) => {
+                const qty = Number(event.target.value);
+                if (!Number.isInteger(qty) || qty < 1 || qty > 99999) return;
+                setLines((rows) => rows.map((row) => row.productId === line.productId ? { ...row, qty } : row));
+              }} />
+            <Button type="button" tone="ghost" aria-label={`Añadir uno de ${line.name}`}
+              onClick={() => setLines((rows) => rows.map((row) => row.productId === line.productId
+                ? { ...row, qty: row.qty + 1 } : row))}>+</Button>
+          </div>
+        ))}
+        <div className="flex items-center justify-between font-semibold">
+          <span>Total de compra</span>
+          <span className="tabular-nums">{money(totals?.totalCents ?? 0, business.currency)}</span>
+        </div>
+        {totalError && <p className="text-sm text-clay">{totalError}</p>}
+        <Button type="button" disabled={!totals} onClick={() => setCartOpen(true)}>Continuar al cobro</Button>
+      </section>
+      <div className="h-16 lg:hidden" />
+      <button type="button" disabled={!totals} className="fixed inset-x-4 bottom-[5.5rem] z-20 min-h-12 rounded-2xl bg-ink px-4 text-paper disabled:opacity-60 lg:left-72 lg:bottom-4"
+        onClick={() => setCartOpen(true)}>
+        Cobrar · {priced.reduce((count, line) => count + line.qty, 0)} · {money(totals?.totalCents ?? 0, business.currency)}
       </button>
-      <Modal open={cartOpen} title="Carrito" onClose={() => setCartOpen(false)}>
+      <Modal open={cartOpen} title="Revisar y cobrar" onClose={() => setCartOpen(false)}>
         <div className="space-y-3">
           {priced.map((line) => (
             <div key={line.productId} className="border-b border-line pb-2">
@@ -430,15 +523,26 @@ export function Pos() {
           ))}
         </div>
       </Modal>
-      <Modal open={scanOpen} title="Escanear código" onClose={() => setScanOpen(false)}>
-        <Scanner onCode={(code) => void onScan(code)} />
-        <p className="mt-3 text-sm text-muted">Si la cámara no está disponible, escriba el código o el texto del QR.</p>
-        <div className="mt-2 flex gap-2">
-          <TextInput value={manualCode} placeholder="nexo:p:… o código de barras" onChange={(event) => setManualCode(event.target.value)} />
-          <Button type="button" onClick={() => void onScan(manualCode)}>
-            Usar
-          </Button>
+      <Modal open={scanOpen} title="Escaneo continuo" onClose={() => setScanOpen(false)}>
+        <Scanner onCode={onScan} />
+        <div className="mt-3 rounded-xl bg-teal-soft p-3" aria-live="polite">
+          <p className="text-sm">{lastScanned ? `Añadido: ${lastScanned}` : "Apunte al QR de cada producto"}</p>
+          <p className="mt-1 font-semibold tabular-nums">
+            {priced.reduce((count, line) => count + line.qty, 0)} artículos · {money(totals?.totalCents ?? 0, business.currency)}
+          </p>
+          <div className="mt-2 max-h-28 space-y-1 overflow-auto">
+            {priced.map((line) => <p key={line.productId} className="text-xs">{line.qty} × {line.name}</p>)}
+          </div>
         </div>
+        <p className="mt-3 text-sm text-muted">Retire el código de la cámara antes de volver a escanearlo. También puede introducirlo manualmente.</p>
+        <div className="mt-2 flex gap-2">
+          <TextInput value={manualCode} placeholder="nexo:p:… o código de barras" onChange={(event) => setManualCode(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void onScan(manualCode); }} />
+          <Button type="button" onClick={() => void onScan(manualCode)}>Agregar</Button>
+        </div>
+        <Button type="button" disabled={!totals} onClick={() => { setScanOpen(false); setCartOpen(true); }}>
+          Revisar carrito y cobrar
+        </Button>
       </Modal>
       <Modal open={Boolean(receipt)} title={receipt ? receipt.number : "Venta"} onClose={() => setReceipt(null)}>
         {receipt && (
@@ -466,63 +570,102 @@ export function Pos() {
   );
 }
 
-function Scanner({ onCode }: { onCode: (code: string) => void }) {
+function Scanner({ onCode }: { onCode: (code: string) => Promise<boolean> }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onCodeRef = useRef(onCode);
   onCodeRef.current = onCode;
-  const [help, setHelp] = useState("Apunte al QR del estante o al código de barras.");
+  const [help, setHelp] = useState("Iniciando cámara…");
+
   useEffect(() => {
-    let stop = false;
+    let stopped = false;
     let stream: MediaStream | null = null;
-    const Detector = (
-      window as unknown as {
-        BarcodeDetector?: new (opts?: { formats?: string[] }) => {
-          detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
-        };
-      }
-    ).BarcodeDetector;
+    let timer: number | undefined;
+    let heldCode = "";
+    let missingFrames = 0;
+    const Detector = (window as unknown as {
+      BarcodeDetector?: new (opts?: { formats?: string[] }) => {
+        detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
+      };
+    }).BarcodeDetector;
+
     void (async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setHelp("Este navegador no abre la cámara. Escriba el código abajo.");
+        setHelp("El navegador no permite abrir la cámara. Introduzca el código manualmente.");
         return;
       }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        if (!Detector) {
-          setHelp("La cámara está activa, pero este navegador no decodifica códigos. Escriba el código.");
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false, video: { facingMode: { ideal: "environment" } },
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+        }
+        if (stopped || !videoRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
           return;
         }
-        const detector = new Detector({ formats: ["qr_code", "ean_13", "ean_8", "code_128", "upc_a", "upc_e", "code_39"] });
+        const video = videoRef.current;
+        video.srcObject = stream;
+        await video.play();
+
+        if (!Detector) {
+          setHelp("Cámara activa, pero este navegador no tiene detector de QR. Utilice otro navegador compatible o introduzca el código.");
+          return;
+        }
+        let detector: InstanceType<typeof Detector>;
+        try {
+          detector = new Detector({
+            formats: ["qr_code", "ean_13", "ean_8", "code_128", "upc_a", "upc_e", "code_39"],
+          });
+        } catch {
+          detector = new Detector();
+        }
+        setHelp("Escanee un QR. Retírelo del cuadro para poder leerlo nuevamente.");
+
         const tick = async () => {
-          if (stop || !videoRef.current) return;
+          if (stopped) return;
           try {
-            const found = await detector.detect(videoRef.current);
-            if (found[0]?.rawValue) {
-              onCodeRef.current(found[0].rawValue);
-              return;
+            const codes = await detector.detect(video);
+            const code = codes[0]?.rawValue?.trim() || "";
+            if (!code) {
+              missingFrames += 1;
+              if (missingFrames >= 3) heldCode = "";
+            } else {
+              missingFrames = 0;
+              // A stationary QR is seen on dozens of consecutive frames.
+              // Only count it again after it leaves the camera and comes back.
+              if (code !== heldCode) {
+                heldCode = code;
+                const ok = await onCodeRef.current(code);
+                if (!stopped) setHelp(ok ? "Producto agregado. Escanee el siguiente código." : "Código no reconocido. Pruebe nuevamente.");
+              }
             }
           } catch {
-            /* frame */
+            // A temporary blurred frame must not terminate continuous scanning.
           }
-          if (!stop) requestAnimationFrame(() => void tick());
+          if (!stopped) timer = window.setTimeout(() => void tick(), 180);
         };
         void tick();
-      } catch {
-        setHelp("No se permitió la cámara. Puede escribir el código.");
+      } catch (error) {
+        const reason = error instanceof Error && error.name === "NotAllowedError"
+          ? "Permiso de cámara denegado. Autorícelo en los ajustes del navegador."
+          : "No se pudo iniciar la cámara. Compruebe permisos, HTTPS y que no esté siendo utilizada.";
+        if (!stopped) setHelp(reason);
       }
     })();
+
     return () => {
-      stop = true;
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
       stream?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
   return (
     <div>
       <video ref={videoRef} className="h-52 w-full rounded-2xl bg-ink object-cover" muted playsInline />
-      <p className="mt-2 text-sm text-muted">{help}</p>
+      <p className="mt-2 text-sm text-muted" role="status">{help}</p>
     </div>
   );
 }

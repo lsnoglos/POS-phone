@@ -11,7 +11,7 @@ import {
   postCountFn,
   saveProductFn,
 } from "@/lib/nexo/fns";
-import { money, qrPayload, UNITS } from "@/lib/nexo/money";
+import { money, UNITS } from "@/lib/nexo/money";
 import type { Product } from "@/lib/nexo/types";
 import { downloadPdf, labelsBlob } from "@/lib/nexo/pdf";
 import { useNexo } from "./context";
@@ -61,6 +61,17 @@ export function Inventory() {
   const [form, setForm] = useState(empty);
   const [photo, setPhoto] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [createdCount, setCreatedCount] = useState(0);
+  const [showPriceTools, setShowPriceTools] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [labelCopies, setLabelCopies] = useState("1");
+  const [labelPhotos, setLabelPhotos] = useState(true);
+  const blankRow = () => ({ name: "", cost: "", price: "", qty: "0" });
+  const [quickRows, setQuickRows] = useState(() => Array.from({ length: 4 }, blankRow));
+  const [quickSaving, setQuickSaving] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [adjustFor, setAdjustFor] = useState<Product | null>(null);
   const [delta, setDelta] = useState("");
@@ -118,11 +129,14 @@ export function Inventory() {
   function startNew() {
     setEditing(null);
     setDraftId(null);
+    setDetailsOpen(false);
+    setCreatedCount(0);
     setForm(empty);
     setPhoto(null);
     setOpen(true);
   }
   function startEdit(product: Product) {
+    setDetailsOpen(true);
     setEditing(product);
     setDraftId(product.id);
     setPhoto(product.photo);
@@ -157,52 +171,82 @@ export function Inventory() {
     setOpen(true);
   }
 
-  async function save() {
+  async function save(keepOpen = false) {
+    if (saving) return;
     const price = Math.round(Number(form.price) * 100);
     const cost = Math.round(Number(form.cost || 0) * 100);
-    if (!form.name.trim() || !Number.isFinite(price) || price < 0) {
-      toast.error("Nombre y precio de venta son obligatorios");
+    const qty = Number(form.initialQty);
+    if (form.name.trim().length < 2 || !form.price.trim() || !Number.isFinite(price) || price < 0 ||
+        !Number.isFinite(cost) || cost < 0 || (!editing && (!Number.isInteger(qty) || qty < 0))) {
+      toast.error("Ingrese nombre, costo, precio y una cantidad válida");
       return;
     }
-    const result = await saveProductFn({
-      data: {
-        businessId: business.id,
-        branchId,
-        id: editing?.id ?? draftId ?? undefined,
-        name: form.name,
-        description: form.description,
-        photo,
-        category: form.category,
-        subcategory: form.subcategory,
-        brand: form.brand,
-        sku: form.sku,
-        barcode: form.barcode,
-        costCents: Number.isFinite(cost) ? cost : 0,
-        priceCents: price,
-        wholesaleCents: Math.round(Number(form.wholesale || 0) * 100) || 0,
-        promoCents: form.promo ? Math.round(Number(form.promo) * 100) : null,
-        promoUntil: form.promoUntil || null,
-        volumePrices: volumeTier(form.volumeQty, form.volumePrice),
-        taxExempt: form.taxExempt,
-        regulated: form.regulated,
-        minQty: Number(form.minQty) || 0,
-        unit: form.unit,
-        supplierId: null,
-        expiresOn: form.expiresOn || null,
-        lotCode: form.lotCode,
-        location: form.location,
-        active: form.active,
-        favorite: form.favorite,
-        parentId: null,
-        variantLabel: form.variant,
-        initialQty: editing || draftId ? 0 : Number(form.initialQty) || 0,
-      },
-    });
-    if (!result.ok) toast.error(result.error);
-    else {
+    setSaving(true);
+    try {
+      const result = await saveProductFn({
+        data: {
+          businessId: business.id, branchId,
+          id: editing?.id ?? draftId ?? undefined,
+          name: form.name, description: form.description, photo,
+          category: form.category, subcategory: form.subcategory, brand: form.brand,
+          sku: form.sku, barcode: form.barcode, costCents: cost, priceCents: price,
+          wholesaleCents: Math.round(Number(form.wholesale || 0) * 100) || 0,
+          promoCents: form.promo ? Math.round(Number(form.promo) * 100) : null,
+          promoUntil: form.promoUntil || null,
+          volumePrices: volumeTier(form.volumeQty, form.volumePrice),
+          taxExempt: form.taxExempt, regulated: form.regulated,
+          minQty: Number(form.minQty) || 0, unit: form.unit, supplierId: null,
+          expiresOn: form.expiresOn || null, lotCode: form.lotCode,
+          location: form.location, active: form.active, favorite: form.favorite,
+          parentId: null, variantLabel: form.variant,
+          initialQty: editing || draftId ? 0 : qty,
+        },
+      });
+      if (!result.ok) { toast.error(result.error); return; }
       toast.success(editing || draftId ? "Producto actualizado" : "Producto registrado");
-      closeForm();
-      void qc.invalidateQueries();
+      void qc.invalidateQueries({ queryKey: ["products", business.id] });
+      if (keepOpen && !editing && !draftId) {
+        setCreatedCount((count) => count + 1);
+        setForm((current) => ({ ...empty, category: current.category, unit: current.unit }));
+        setPhoto(null);
+        sessionStorage.removeItem(DRAFT_KEY);
+        document.getElementById("nexo-quick-product-name")?.focus();
+      } else {
+        closeForm();
+      }
+    } catch {
+      toast.error("No se pudo confirmar el guardado. Revise Inventario antes de intentarlo otra vez.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveQuickRows() {
+    if (quickSaving) return;
+    const populated = quickRows.filter((row) => row.name.trim() || row.cost || row.price);
+    if (!populated.length) { toast.error("Agregue al menos un producto"); return; }
+    const rows = populated.map((row) => ({
+      name: row.name.trim(), costCents: Math.round(Number(row.cost || 0) * 100),
+      priceCents: Math.round(Number(row.price) * 100), qty: Number(row.qty || 0),
+      barcode: "", category: "", unit: "unidad", minQty: 0, sku: "",
+    }));
+    if (rows.some((row) => row.name.length < 2 || !Number.isFinite(row.priceCents) ||
+      row.priceCents < 0 || !Number.isFinite(row.costCents) || row.costCents < 0 ||
+      !Number.isInteger(row.qty) || row.qty < 0) || populated.some((row) => !row.price.trim())) {
+      toast.error("Revise nombres, precios y cantidades de las filas");
+      return;
+    }
+    setQuickSaving(true);
+    try {
+      const result = await importProductsFn({ data: { businessId: business.id, branchId, rows } });
+      if (!result.ok) { toast.error(result.error); return; }
+      toast.success(`${result.data} productos registrados`);
+      setQuickRows(Array.from({ length: 4 }, blankRow));
+      void qc.invalidateQueries({ queryKey: ["products", business.id] });
+    } catch {
+      toast.error("No se confirmó la carga. Revise el inventario antes de reintentar para evitar duplicados.");
+    } finally {
+      setQuickSaving(false);
     }
   }
 
@@ -210,13 +254,15 @@ export function Inventory() {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h1 className="font-display text-3xl">Inventario</h1>
-        <Button type="button" onClick={startNew}>
-          Nuevo
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" tone="ghost" onClick={() => go("inventario", "rapido")}>Registro rápido</Button>
+          <Button type="button" onClick={startNew}>Nuevo</Button>
+        </div>
       </div>
       <div className="flex gap-2 overflow-auto text-sm">
         {[
           ["lista", "Productos"],
+          ["rapido", "Registro rápido"],
           ["conteo", "Conteo"],
           ["importar", "Importar"],
           ["movimientos", "Historial"],
@@ -228,7 +274,37 @@ export function Inventory() {
       </div>
       {screen === "lista" && (
         <>
-          <div className="card grid grid-cols-2 gap-2 p-3">
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={() => setShowLabels((value) => !value)}>Generar etiquetas QR</Button>
+            <Button type="button" tone="ghost" onClick={() => setShowPriceTools((value) => !value)}>Herramientas de precios</Button>
+          </div>
+          {showLabels && (
+            <div className="card space-y-3 p-3">
+              <p className="font-semibold">Etiquetas en hoja carta</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={Boolean(products.data?.length) && selectedProducts.length === products.data?.length}
+                  onChange={(event) => setSelectedProducts(event.target.checked ? (products.data ?? []).map((item) => item.id) : [])} />
+                Seleccionar todos los productos
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Copias por producto">
+                  <TextInput inputMode="numeric" type="number" min="1" max="50" value={labelCopies} onChange={(event) => setLabelCopies(event.target.value)} />
+                </Field>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={labelPhotos} onChange={(event) => setLabelPhotos(event.target.checked)} /> Incluir fotografías</label>
+              </div>
+              <Button type="button" disabled={!selectedProducts.length || !Number.isInteger(Number(labelCopies)) || Number(labelCopies) < 1 || Number(labelCopies) > 50}
+                onClick={() => void downloadPdf(() => labelsBlob({
+                  businessName: business.name, currency: business.currency, cols: 2, rows: 5,
+                  marginMm: 10, gapX: 2, gapY: 2, showPhoto: labelPhotos,
+                  showName: true, showPrice: true, showQr: true, showBarcode: false,
+                  showBusiness: true, copies: Number(labelCopies),
+                  products: (products.data ?? []).filter((item) => selectedProducts.includes(item.id)),
+                }), "etiquetas-nexo-pos.pdf")}>
+                Descargar PDF · {selectedProducts.length} productos
+              </Button>
+            </div>
+          )}
+          {showPriceTools && <div className="card grid grid-cols-2 gap-2 p-3">
             <Field label="Campo">
               <Select value={field} onChange={(event) => setField(event.target.value as typeof field)}>
                 <option value="price">Precio de venta</option>
@@ -256,11 +332,14 @@ export function Inventory() {
             >
               Aplicar cambio de precios
             </Button>
-          </div>
+          </div>}
           {(products.data ?? []).length === 0 && <Empty title="Sin productos" body="Registre el primero o cargue el negocio de demostración desde el inicio." />}
           {(products.data ?? []).map((product) => (
             <article key={product.id} className="card p-3">
               <div className="flex gap-3">
+                {showLabels && <input type="checkbox" aria-label={`Seleccionar ${product.name}`} checked={selectedProducts.includes(product.id)}
+                  onChange={(event) => setSelectedProducts((selected) => event.target.checked
+                    ? [...selected, product.id] : selected.filter((id) => id !== product.id))} />}
                 {product.photo && <img src={product.photo} alt="" className="h-16 w-16 rounded-xl object-cover" />}
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold">{product.name}</p>
@@ -268,7 +347,7 @@ export function Inventory() {
                     {money(product.priceCents, business.currency)} · costo {money(product.costCents, business.currency)} · hay {product.stock}
                     {product.barcode ? ` · ${product.barcode}` : ""}
                   </p>
-                  <p className="break-all text-xs text-muted">{qrPayload(product.id)}</p>
+                  <p className="text-xs text-muted">Etiqueta QR disponible · {product.sku || "Código interno"}</p>
                 </div>
               </div>
               <div className="mt-2 flex gap-2">
@@ -311,6 +390,33 @@ export function Inventory() {
             </article>
           ))}
         </>
+      )}
+      {screen === "rapido" && (
+        <section className="space-y-3">
+          <p className="text-sm text-muted">Registre varios productos de una vez. Los precios están en {business.currency}. Para añadir fotografías o más detalles, edite luego el producto.</p>
+          {quickRows.map((row, index) => (
+            <div key={index} className="card space-y-2 p-3">
+              <div className="flex items-center justify-between">
+                <strong>Producto {index + 1}</strong>
+                <Button type="button" tone="ghost" disabled={quickRows.length === 1}
+                  onClick={() => setQuickRows((rows) => rows.filter((_, i) => i !== index))}>Quitar</Button>
+              </div>
+              <Field label="Nombre"><TextInput value={row.name} onChange={(event) => setQuickRows((rows) => rows.map((r, i) => i === index ? { ...r, name: event.target.value } : r))} /></Field>
+              <div className="grid grid-cols-3 gap-2">
+                {(["cost", "price", "qty"] as const).map((key) => (
+                  <Field key={key} label={key === "cost" ? "Costo" : key === "price" ? "Venta" : "Cantidad"}>
+                    <TextInput inputMode={key === "qty" ? "numeric" : "decimal"} value={row[key]} onChange={(event) =>
+                      setQuickRows((rows) => rows.map((r, i) => i === index ? { ...r, [key]: event.target.value } : r))} />
+                  </Field>
+                ))}
+              </div>
+            </div>
+          ))}
+          <Button type="button" tone="ghost" onClick={() => setQuickRows((rows) => [...rows, blankRow()])}>+ Agregar fila</Button>
+          <Button type="button" disabled={quickSaving} onClick={() => void saveQuickRows()}>
+            {quickSaving ? "Registrando…" : "Guardar todos"}
+          </Button>
+        </section>
       )}
       {screen === "movimientos" && (
         <div className="space-y-2">
@@ -397,45 +503,62 @@ export function Inventory() {
       )}
       <Modal open={open} title={editing || draftId ? "Editar producto" : "Nuevo producto"} onClose={closeForm}>
         <div className="space-y-3">
-          <Field label="Nombre"><TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>
-          <Field label="Descripción"><Area value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></Field>
+          {createdCount > 0 && <p className="rounded-xl bg-teal-soft px-3 py-2 text-sm">Registrados en esta sesión: {createdCount}</p>}
+          <Field label="Nombre del producto">
+            <TextInput id="nexo-quick-product-name" autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          </Field>
           <div>
-            <p className="mb-1 text-sm text-muted">Foto</p>
+            <p className="mb-1 text-sm text-muted">Fotografía</p>
             <PhotoPicker value={photo} onChange={setPhoto} />
-            <p className="mt-1 text-xs text-muted">La foto se toma aquí, sin abrir la cámara del sistema, para que la ficha no se pierda.</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Categoría"><TextInput list="cats" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></Field>
-            <datalist id="cats">{(categories.data ?? []).map((cat) => <option key={cat.id} value={cat.name} />)}</datalist>
-            <Field label="Subcategoría"><TextInput value={form.subcategory} onChange={(event) => setForm({ ...form, subcategory: event.target.value })} /></Field>
-            <Field label="Marca"><TextInput value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></Field>
-            <Field label="SKU"><TextInput value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} /></Field>
-            <Field label="Código de barras"><TextInput value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} /></Field>
-            <Field label="Variante"><TextInput value={form.variant} placeholder="Talla, color…" onChange={(event) => setForm({ ...form, variant: event.target.value })} /></Field>
-            <Field label="Unidad">
-              <Select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}>
-                {UNITS.map((unit) => <option key={unit}>{unit}</option>)}
-              </Select>
-            </Field>
-            <Field label="Costo"><TextInput inputMode="decimal" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} /></Field>
-            <Field label="Precio de venta"><TextInput inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} /></Field>
-            <Field label="Mayoreo"><TextInput inputMode="decimal" value={form.wholesale} onChange={(event) => setForm({ ...form, wholesale: event.target.value })} /></Field>
-            <Field label="Precio promo"><TextInput inputMode="decimal" value={form.promo} onChange={(event) => setForm({ ...form, promo: event.target.value })} /></Field>
-            <Field label="Promo hasta"><TextInput type="date" value={form.promoUntil} onChange={(event) => setForm({ ...form, promoUntil: event.target.value })} /></Field>
-            <Field label="Desde cuántas unidades"><TextInput inputMode="numeric" value={form.volumeQty} onChange={(event) => setForm({ ...form, volumeQty: event.target.value })} /></Field>
-            <Field label="Precio por volumen"><TextInput inputMode="decimal" value={form.volumePrice} onChange={(event) => setForm({ ...form, volumePrice: event.target.value })} /></Field>
-            <Field label="Mínimo"><TextInput inputMode="numeric" value={form.minQty} onChange={(event) => setForm({ ...form, minQty: event.target.value })} /></Field>
-            {!editing && !draftId && <Field label="Existencia inicial"><TextInput inputMode="numeric" value={form.initialQty} onChange={(event) => setForm({ ...form, initialQty: event.target.value })} /></Field>}
-            <Field label="Vence"><TextInput type="date" value={form.expiresOn} onChange={(event) => setForm({ ...form, expiresOn: event.target.value })} /></Field>
-            <Field label="Lote"><TextInput value={form.lotCode} onChange={(event) => setForm({ ...form, lotCode: event.target.value })} /></Field>
-            <Field label="Ubicación"><TextInput value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></Field>
+            <Field label="Precio proveedor"><TextInput inputMode="decimal" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} /></Field>
+            <Field label="Precio venta"><TextInput inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} /></Field>
           </div>
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.taxExempt} onChange={(event) => setForm({ ...form, taxExempt: event.target.checked })} /> Exento de impuesto</label>
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.regulated} onChange={(event) => setForm({ ...form, regulated: event.target.checked })} /> Sujeto a control (pide referencia al vender)</label>
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Activo</label>
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.favorite} onChange={(event) => setForm({ ...form, favorite: event.target.checked })} /> Favorito en caja</label>
-          {business.businessType === "farmacia" && <p className="text-sm text-muted">En farmacia, registre cada lote como producto. Al escanear el mismo código se ofrece primero el que vence antes. Los vencidos no se venden.</p>}
-          <Button type="button" onClick={() => void save()}>Guardar</Button>
+          {!editing && !draftId && (
+            <Field label="Cantidad inicial"><TextInput inputMode="numeric" value={form.initialQty}
+              onChange={(event) => setForm({ ...form, initialQty: event.target.value })} /></Field>
+          )}
+          {editing && <p className="text-sm text-muted">Para cambiar existencias utilice «Ajustar» en el inventario.</p>}
+          <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-xl bg-paper px-3 font-medium"
+            aria-expanded={detailsOpen} onClick={() => setDetailsOpen((value) => !value)}>
+            Más detalles <span aria-hidden="true">{detailsOpen ? "−" : "+"}</span>
+          </button>
+          {detailsOpen && (
+            <div className="space-y-3">
+              <Field label="Descripción"><Area value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Categoría"><TextInput list="cats" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></Field>
+                <datalist id="cats">{(categories.data ?? []).map((cat) => <option key={cat.id} value={cat.name} />)}</datalist>
+                <Field label="Subcategoría"><TextInput value={form.subcategory} onChange={(event) => setForm({ ...form, subcategory: event.target.value })} /></Field>
+                <Field label="Marca"><TextInput value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></Field>
+                <Field label="SKU"><TextInput value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} /></Field>
+                <Field label="Código de barras"><TextInput value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} /></Field>
+                <Field label="Variante"><TextInput value={form.variant} onChange={(event) => setForm({ ...form, variant: event.target.value })} /></Field>
+                <Field label="Unidad"><Select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}>
+                  {UNITS.map((unit) => <option key={unit}>{unit}</option>)}
+                </Select></Field>
+                <Field label="Mayoreo"><TextInput inputMode="decimal" value={form.wholesale} onChange={(event) => setForm({ ...form, wholesale: event.target.value })} /></Field>
+                <Field label="Precio promo"><TextInput inputMode="decimal" value={form.promo} onChange={(event) => setForm({ ...form, promo: event.target.value })} /></Field>
+                <Field label="Promo hasta"><TextInput type="date" value={form.promoUntil} onChange={(event) => setForm({ ...form, promoUntil: event.target.value })} /></Field>
+                <Field label="Desde unidades"><TextInput inputMode="numeric" value={form.volumeQty} onChange={(event) => setForm({ ...form, volumeQty: event.target.value })} /></Field>
+                <Field label="Precio por volumen"><TextInput inputMode="decimal" value={form.volumePrice} onChange={(event) => setForm({ ...form, volumePrice: event.target.value })} /></Field>
+                <Field label="Mínimo"><TextInput inputMode="numeric" value={form.minQty} onChange={(event) => setForm({ ...form, minQty: event.target.value })} /></Field>
+                <Field label="Vence"><TextInput type="date" value={form.expiresOn} onChange={(event) => setForm({ ...form, expiresOn: event.target.value })} /></Field>
+                <Field label="Lote"><TextInput value={form.lotCode} onChange={(event) => setForm({ ...form, lotCode: event.target.value })} /></Field>
+                <Field label="Ubicación"><TextInput value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></Field>
+              </div>
+              <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.taxExempt} onChange={(event) => setForm({ ...form, taxExempt: event.target.checked })} /> Exento de impuesto</label>
+              <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.regulated} onChange={(event) => setForm({ ...form, regulated: event.target.checked })} /> Producto sujeto a control</label>
+              <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Activo</label>
+              <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.favorite} onChange={(event) => setForm({ ...form, favorite: event.target.checked })} /> Favorito en caja</label>
+              {business.businessType === "farmacia" && <p className="text-sm text-muted">Registre lotes y vencimientos. Los productos vencidos no se venden.</p>}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            {!editing && !draftId && <Button type="button" disabled={saving} tone="ghost" onClick={() => void save(true)}>Guardar y otro</Button>}
+            <Button type="button" disabled={saving} onClick={() => void save(false)}>{saving ? "Guardando…" : "Guardar y cerrar"}</Button>
+          </div>
         </div>
       </Modal>
       <Modal open={Boolean(adjustFor)} title="Ajuste de existencia" onClose={() => setAdjustFor(null)}>
