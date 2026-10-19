@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #f4f0e6;
+  --surface: #fffdf8;
+  --ink: #1b1914;
+  --muted: #6d675e;
+  --line: #e4dccf;
+  --teal: #0f6e62;
+  --teal-soft: #e5f3f0;
+  --on-teal: #f3fbf9;
+  --clay: #c24d28;
+  --clay-soft: #fdece6;
+  --on-clay: #fff8f5;
+  --shadow:
+    0 0 0 1px rgba(28, 25, 21, 0.06),
+    0 1px 2px rgba(28, 25, 21, 0.05),
+    0 10px 28px rgba(28, 25, 21, 0.05);
+  color-scheme: light;
+}
+
+.dark {
+  --paper: #121410;
+  --surface: #1c1f19;
+  --ink: #f3efe6;
+  --muted: #b0a89c;
+  --line: #2e332b;
+  --teal: #3dbea8;
+  --teal-soft: #17332e;
+  --on-teal: #06221d;
+  --clay: #f08a62;
+  --clay-soft: #3a241c;
+  --on-clay: #2a120c;
+  --shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Outfit", "Avenir Next", "Segoe UI", sans-serif;
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-on-teal: var(--on-teal);
+  --color-clay: var(--clay);
+  --color-clay-soft: var(--clay-soft);
+  --color-on-clay: var(--on-clay);
+  --radius-card: 1.25rem;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+  }
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  img {
+    outline: 1px solid color-mix(in oklab, var(--ink) 12%, transparent);
+    outline-offset: -1px;
+  }
+}
+
+.card {
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius-card);
+}
+
+.nav-pad {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+
+.page-pad {
+  padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

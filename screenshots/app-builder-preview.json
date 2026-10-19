@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "NEXO POS",
+      "hasCanvas": false,
+      "bodyTextLen": 33,
+      "bodyTextHash": "41b97964daf35c66da0436c046dc6225488a9212da159665c34dc2c9d189a04b",
+      "bodyTextPrefix": "NEXO POS Preparando el mostrador…",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "NEXO POS",
+      "hasCanvas": false,
+      "bodyTextLen": 33,
+      "bodyTextHash": "41b97964daf35c66da0436c046dc6225488a9212da159665c34dc2c9d189a04b",
+      "bodyTextPrefix": "NEXO POS Preparando el mostrador…",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

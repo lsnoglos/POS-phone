@@ -1,0 +1,829 @@
+PROMPT MAESTRO — NEXO POS
+
+Sistema integral de ventas, inventario, contabilidad y administración de pequeños negocios
+
+Actúa como un equipo multidisciplinario de desarrollo de software compuesto por:
+
+- Arquitecto de software senior.
+- Desarrollador Android experto en Kotlin y Jetpack Compose.
+- Desarrollador full-stack especializado en Firebase y Google Cloud.
+- Diseñador UI/UX especializado en aplicaciones comerciales.
+- Contador profesional especializado en pequeñas empresas.
+- Experto en inventarios, comercio minorista y puntos de venta.
+- Especialista en ciberseguridad y protección de datos.
+
+1. OBJETIVO GENERAL
+
+Desarrolla una aplicación llamada NEXO POS, un sistema integral de administración de negocios, diseñado principalmente para teléfonos Android, con una interfaz moderna, rápida, intuitiva y completamente en español.
+
+Debe permitir gestionar un negocio desde un teléfono, incluyendo ventas, compras, inventario, proveedores, clientes, créditos, préstamos, contabilidad, reportes, facturación, códigos QR, códigos de barras y sincronización con servicios de Google.
+
+El sistema debe ser útil para:
+
+- Pulperías y abarroterías.
+- Farmacias.
+- Ferreterías.
+- Tiendas de ropa y calzado.
+- Minimercados.
+- Librerías.
+- Tiendas de repuestos.
+- Distribuidoras.
+- Emprendimientos familiares.
+- Pequeñas y medianas empresas.
+
+Debe poder utilizarse con una sola persona o con múltiples empleados.
+
+2. TECNOLOGÍAS Y ARQUITECTURA
+
+Implementa una arquitectura modular, escalable y mantenible.
+
+Tecnologías preferidas:
+
+- Android nativo: Kotlin + Jetpack Compose.
+- Arquitectura MVVM y Clean Architecture.
+- Backend: Firebase Authentication, Cloud Firestore, Cloud Functions y Cloud Storage.
+- Base de datos local: Room.
+- Sincronización de datos: WorkManager.
+- Inicio de sesión: Google Sign-In mediante Firebase Authentication.
+- Google Sheets API.
+- Google Drive API.
+- Google Calendar API.
+- Cámara: CameraX.
+- Escaneo: Google ML Kit Barcode Scanning.
+- Generación de QR: ZXing o equivalente.
+- Generación de PDF.
+- Impresión: Android Print Framework, Bluetooth y ESC/POS.
+- Gráficos estadísticos interactivos.
+
+Si el entorno de Grok Construir no permite compilar aplicaciones Android nativas, crea inicialmente una PWA responsive, instalable y compatible con Android, preparada para evolucionar posteriormente a una aplicación nativa.
+
+No simules servicios que requieren configuración externa. Implementa las integraciones reales cuando sea posible e indica claramente cuáles necesitan credenciales, permisos, configuración de Firebase o publicación en Google Cloud.
+
+3. REGISTRO, INICIO DE SESIÓN Y NEGOCIOS
+
+El usuario podrá:
+
+1. Iniciar sesión con Google.
+2. Crear un negocio.
+3. Registrar nombre comercial, dirección, teléfono, logotipo y moneda.
+4. Seleccionar el tipo de negocio.
+5. Crear varias sucursales.
+6. Invitar empleados.
+7. Configurar permisos por usuario.
+8. Cambiar entre negocios autorizados.
+
+Roles:
+
+- Propietario: control completo.
+- Administrador: operaciones y reportes.
+- Cajero: ventas y cobros.
+- Inventarista: productos y existencias.
+- Contador: registros contables y reportes.
+- Supervisor: acceso según permisos.
+
+Cada negocio tendrá sus propios datos aislados.
+
+Ningún usuario podrá acceder a información de otro negocio sin autorización.
+
+4. PANEL PRINCIPAL
+
+Diseña un dashboard moderno que muestre:
+
+- Ventas del día.
+- Ventas de ayer.
+- Ventas de la semana y del mes.
+- Ganancia bruta estimada.
+- Utilidad neta calculada según gastos y costos registrados.
+- Efectivo disponible por caja.
+- Cuentas por cobrar.
+- Cuentas por pagar.
+- Productos agotados.
+- Productos próximos a agotarse.
+- Productos próximos a vencer.
+- Facturas pendientes.
+- Créditos vencidos.
+- Gastos del mes.
+- Productos más vendidos.
+
+Incluye gráficos de barras, líneas y circulares.
+
+Permite filtrar por fechas, empleados, sucursales y categorías.
+
+Agrega accesos rápidos a:
+
+Nueva venta | Nueva compra | Inventario | Clientes | Fiados | Caja | Reportes
+
+5. GESTIÓN DE PRODUCTOS E INVENTARIO
+
+Cada producto debe contener:
+
+- ID interno único.
+- Nombre.
+- Descripción.
+- Fotografía tomada con la cámara o seleccionada de galería.
+- Categoría y subcategoría.
+- Marca.
+- Código SKU.
+- Código de barras.
+- Código QR.
+- Precio de compra.
+- Precio de venta.
+- Precio mayorista.
+- Margen de utilidad.
+- Impuestos aplicables.
+- Existencia actual.
+- Existencia mínima.
+- Unidad de medida.
+- Proveedor principal.
+- Fecha de vencimiento, cuando corresponda.
+- Número de lote.
+- Ubicación en almacén o estante.
+- Estado activo o inactivo.
+
+Permite:
+
+1. Registrar productos manualmente.
+2. Registrar productos escaneando su código de barras.
+3. Importar productos desde Excel o CSV.
+4. Editar productos.
+5. Aplicar cambios masivos de precios.
+6. Ajustar inventario con motivo y autorización.
+7. Registrar pérdidas, productos dañados y vencidos.
+8. Realizar conteos físicos.
+9. Comparar inventario físico con inventario del sistema.
+10. Transferir productos entre sucursales.
+11. Consultar historial completo de movimientos.
+12. Manejar variantes como tamaño, color o presentación.
+13. Registrar productos por unidad, caja, paquete, kilogramo o litro.
+
+El inventario debe actualizarse automáticamente al confirmar ventas, compras, devoluciones y ajustes.
+
+No permitir existencias negativas salvo autorización explícita.
+
+6. GENERADOR DE ETIQUETAS QR PARA ESTANTES
+
+Esta funcionalidad es prioritaria.
+
+El usuario podrá seleccionar uno, varios o todos los productos y generar etiquetas imprimibles.
+
+Cada etiqueta contendrá:
+
+- Fotografía del producto.
+- Nombre.
+- Precio de venta destacado.
+- Código QR.
+- Código de barras opcional.
+- Nombre del negocio opcional.
+
+El QR debe almacenar un identificador único y estable del producto, no información de precio que pueda quedar desactualizada.
+
+Al escanear el QR, la aplicación consultará el producto y su precio vigente.
+
+Diseño de impresión
+
+Crear una herramienta visual para configurar las etiquetas.
+
+Permitir seleccionar:
+
+- Tamaño de etiqueta.
+- Número de columnas.
+- Número de filas.
+- Separación horizontal y vertical.
+- Márgenes.
+- Tamaño de fotografía.
+- Tamaño de texto.
+- Tamaño del QR.
+- Mostrar u ocultar elementos.
+
+Formato predeterminado: papel carta de 21.59 × 27.94 cm.
+
+Crear una vista previa realista de la hoja completa.
+
+Distribuir automáticamente las etiquetas sin recortes ni superposiciones.
+
+Permitir imprimir varias copias del mismo producto.
+
+Generar PDF vectorial de alta calidad, listo para imprimir, respetando medidas físicas y márgenes de impresión.
+
+Las etiquetas deben poder pegarse en los estantes.
+
+7. PUNTO DE VENTA — POS
+
+Crear una pantalla de venta optimizada para utilizarse rápidamente desde un teléfono.
+
+Debe contener:
+
+- Buscador de productos.
+- Cámara para escanear QR.
+- Escáner de códigos de barras.
+- Productos favoritos.
+- Categorías.
+- Carrito de compras.
+- Selección de cliente.
+- Cantidad.
+- Precio unitario.
+- Descuentos.
+- Impuestos.
+- Subtotal.
+- Total.
+- Métodos de pago.
+
+Funcionamiento
+
+1. El cajero abre Nueva venta.
+2. Escanea el QR del estante utilizando la cámara.
+3. El producto se agrega automáticamente al carrito.
+4. Si escanea nuevamente el mismo producto, aumenta la cantidad.
+5. Puede modificar cantidades y eliminar artículos.
+6. Selecciona un cliente existente o consumidor general.
+7. Elige el método de pago.
+8. Confirma la venta.
+9. El sistema registra la transacción.
+10. Descuenta el inventario.
+11. Actualiza la caja.
+12. Genera la factura.
+13. Registra los movimientos contables correspondientes.
+
+Permitir ventas suspendidas y recuperarlas posteriormente.
+
+Soportar pagos:
+
+- Efectivo.
+- Transferencia bancaria.
+- Tarjeta.
+- Pago mixto.
+- Crédito o fiado.
+
+Para pagos electrónicos, registrar su referencia y estado de confirmación. No marcar pagos como confirmados sin una validación real o confirmación autorizada.
+
+Calcular el cambio automáticamente.
+
+8. FACTURACIÓN E IMPRESIÓN
+
+Generar facturas con:
+
+- Logotipo.
+- Nombre del negocio.
+- Dirección.
+- Teléfono.
+- Identificación fiscal cuando corresponda.
+- Número de factura.
+- Fecha y hora.
+- Nombre del cliente.
+- Cajero.
+- Lista de productos.
+- Cantidades.
+- Precios.
+- Descuentos.
+- Impuestos.
+- Total.
+- Monto recibido.
+- Cambio.
+- Método de pago.
+- Código QR de consulta o verificación.
+
+Formatos:
+
+- Ticket térmico de 58 mm.
+- Ticket térmico de 80 mm.
+- Papel carta.
+- PDF.
+- Compartir mediante aplicaciones compatibles.
+
+Permitir reimprimir facturas y emitir devoluciones o notas de crédito sin borrar el historial original.
+
+La numeración debe ser única, consecutiva según la configuración legal aplicable y segura ante ventas simultáneas.
+
+La facturación fiscal electrónica deberá implementarse únicamente cuando exista integración y validación con las autoridades correspondientes.
+
+9. CLIENTES Y FIADOS
+
+Crear un módulo completo de clientes.
+
+Datos:
+
+- Nombre.
+- Teléfono.
+- Dirección.
+- Identificación opcional.
+- Fotografía opcional.
+- Límite de crédito.
+- Saldo pendiente.
+- Historial de compras.
+- Historial de abonos.
+- Fecha de último pago.
+
+Sistema de fiado
+
+Permitir:
+
+- Vender a crédito.
+- Registrar abonos parciales.
+- Establecer fechas de vencimiento.
+- Consultar saldo actualizado.
+- Registrar pagos completos.
+- Generar estados de cuenta.
+- Consultar antigüedad de saldos.
+- Establecer límites de crédito.
+- Bloquear nuevas ventas a crédito por mora.
+- Registrar observaciones.
+- Enviar recordatorios mediante canales autorizados.
+
+Ejemplo:
+
+Un cliente compra C$500 en productos.
+
+Abona C$200.
+
+El sistema mostrará automáticamente un saldo pendiente de C$300.
+
+Cada abono debe generar su propio comprobante y registro contable.
+
+No permitir modificar o eliminar abonos confirmados sin un procedimiento de reversión auditable.
+
+10. PROVEEDORES Y COMPRAS
+
+Crear fichas de proveedores con:
+
+- Nombre comercial.
+- Contacto.
+- Teléfono.
+- Dirección.
+- Identificación fiscal.
+- Productos suministrados.
+- Condiciones de pago.
+- Historial de compras.
+- Saldo pendiente.
+
+Permitir:
+
+- Órdenes de compra.
+- Recepción parcial o completa.
+- Registro de facturas de proveedor.
+- Compras al contado.
+- Compras a crédito.
+- Devoluciones.
+- Abonos.
+- Cuentas por pagar.
+- Historial de precios.
+- Comparación de proveedores.
+
+Al recibir mercancía, actualizar automáticamente el inventario.
+
+Registrar costos adicionales como transporte para calcular correctamente el costo de adquisición.
+
+11. CONTABILIDAD COMPLETA
+
+Implementar contabilidad por partida doble.
+
+Crear los siguientes módulos:
+
+Catálogo de cuentas
+
+Clasificación:
+
+- Activos.
+- Pasivos.
+- Patrimonio.
+- Ingresos.
+- Costos.
+- Gastos.
+
+Permitir cuentas y subcuentas configurables.
+
+Libro diario
+
+Registrar automáticamente asientos contables de:
+
+- Ventas.
+- Compras.
+- Cobros.
+- Pagos.
+- Gastos.
+- Préstamos.
+- Devoluciones.
+- Ajustes de inventario.
+
+Cada asiento debe mantener igualdad entre débitos y créditos.
+
+Libro mayor
+
+Mostrar movimientos por cuenta con:
+
+- Fecha.
+- Referencia.
+- Concepto.
+- Débito.
+- Crédito.
+- Saldo.
+
+Estados financieros
+
+Generar:
+
+- Balance de comprobación.
+- Balance general.
+- Estado de resultados.
+- Flujo de efectivo.
+- Libro diario.
+- Libro mayor.
+- Cuentas por cobrar.
+- Cuentas por pagar.
+- Reporte de costos y utilidades.
+
+Los reportes deberán poder exportarse a PDF, Excel y Google Sheets.
+
+Los períodos contables cerrados no podrán modificarse sin autorización y registro de auditoría.
+
+12. CAJA, BANCOS Y GASTOS
+
+Implementar:
+
+- Apertura de caja.
+- Monto inicial.
+- Ingresos.
+- Egresos.
+- Retiros.
+- Depósitos.
+- Arqueo.
+- Cierre de caja.
+- Diferencias de efectivo.
+- Historial por cajero.
+- Conciliación bancaria.
+
+Registrar gastos como:
+
+- Energía eléctrica.
+- Agua.
+- Internet.
+- Alquiler.
+- Transporte.
+- Salarios.
+- Mantenimiento.
+- Otros gastos.
+
+Permitir registrar fotografías de recibos y comprobantes.
+
+Diferenciar correctamente dinero en caja, ingresos, costos y ganancias.
+
+13. PRÉSTAMOS Y DEUDAS
+
+Crear un módulo para registrar préstamos recibidos y otorgados.
+
+Campos:
+
+- Prestamista o deudor.
+- Capital.
+- Fecha.
+- Tasa de interés.
+- Tipo de interés.
+- Plazo.
+- Frecuencia de pago.
+- Cuota.
+- Saldo.
+- Garantía opcional.
+
+Generar cronogramas de amortización.
+
+Permitir registrar pagos parciales, intereses, capital y mora.
+
+Diferenciar las obligaciones del negocio de los fiados comerciales.
+
+14. INTEGRACIÓN CON GOOGLE
+
+Google Authentication
+
+Autenticación segura mediante cuentas de Google.
+
+Google Sheets
+
+Permitir vincular una hoja de cálculo por negocio.
+
+Crear pestañas como:
+
+- Ventas.
+- Productos.
+- Inventario.
+- Clientes.
+- Fiados.
+- Abonos.
+- Compras.
+- Proveedores.
+- Gastos.
+- Libro diario.
+- Libro mayor.
+- Cuentas por pagar.
+- Reportes.
+
+Sincronizar datos mediante servicios seguros del backend, evitando duplicados.
+
+La base de datos principal seguirá siendo Firestore.
+
+Permitir exportaciones automáticas y manuales.
+
+Google Drive
+
+Permitir guardar copias de seguridad y reportes en carpetas autorizadas.
+
+Implementar restauración validada, con versiones y control de integridad.
+
+Google Calendar
+
+Permitir crear recordatorios de:
+
+- Cobros pendientes.
+- Pagos a proveedores.
+- Vencimientos.
+- Préstamos.
+- Inventarios programados.
+- Obligaciones administrativas.
+
+Solicitar autorización expresa antes de crear eventos.
+
+Google Contacts
+
+Integración opcional para seleccionar clientes, previa autorización.
+
+Solicitar únicamente los permisos necesarios para cada integración.
+
+15. FARMACIAS Y PRODUCTOS CON VENCIMIENTO
+
+Cuando el negocio sea una farmacia, activar funciones adicionales:
+
+- Control por lote.
+- Fecha de vencimiento.
+- Alertas de caducidad.
+- Inventario por presentación.
+- Identificación de medicamentos.
+- Control de productos sujetos a regulación.
+- Historial de lotes vendidos.
+- Bloqueo de productos vencidos.
+- Trazabilidad de devoluciones.
+- Gestión FEFO: primero vence, primero sale.
+
+No automatizar la dispensación de medicamentos restringidos sin las verificaciones legales correspondientes.
+
+16. REPORTES E INTELIGENCIA COMERCIAL
+
+Generar reportes de:
+
+- Ventas por hora, día, semana y mes.
+- Ventas por empleado.
+- Ventas por sucursal.
+- Ganancias por producto.
+- Productos más rentables.
+- Productos sin movimiento.
+- Rotación de inventario.
+- Clientes frecuentes.
+- Clientes morosos.
+- Comparación entre períodos.
+- Margen bruto.
+- Gastos operativos.
+- Utilidad neta.
+- Proyección de reposición de productos.
+
+Agregar recomendaciones inteligentes basadas en datos reales.
+
+Ejemplo:
+
+"El arroz se está agotando. Durante los últimos siete días se vendieron 35 unidades y solamente quedan 8".
+
+No inventar estadísticas cuando no existan datos suficientes.
+
+17. MODO SIN INTERNET
+
+La aplicación debe funcionar sin conexión para las operaciones compatibles.
+
+Implementar almacenamiento local seguro.
+
+Permitir consultar productos y registrar ventas sin conexión cuando la información necesaria esté disponible localmente.
+
+Al recuperar internet:
+
+- Sincronizar operaciones pendientes.
+- Evitar duplicados.
+- Detectar conflictos.
+- Resolverlos mediante reglas explícitas.
+- Actualizar existencias.
+- Confirmar estados de sincronización.
+
+No prometer consistencia absoluta de inventario entre varios dispositivos desconectados.
+
+Mostrar claramente operaciones pendientes, confirmadas o que requieren intervención.
+
+18. SEGURIDAD
+
+Implementar:
+
+- Autenticación segura.
+- Control de acceso por roles.
+- Aislamiento de datos por negocio.
+- Reglas de seguridad Firestore.
+- Validación de operaciones sensibles en backend.
+- Cifrado de datos sensibles.
+- Gestión segura de tokens.
+- Registro de auditoría.
+- Copias de seguridad.
+- Protección contra ventas duplicadas.
+- Prevención de alteraciones de facturas.
+- Bloqueo de operaciones no autorizadas.
+- Cierre de sesión.
+- Autenticación biométrica opcional.
+
+Nunca almacenar contraseñas de Google ni claves privadas dentro del código cliente.
+
+Utilizar transacciones atómicas para las operaciones financieras y de inventario.
+
+19. DISEÑO DE INTERFAZ
+
+Crear una interfaz profesional, moderna y fácil de utilizar.
+
+Estilo visual:
+
+- Material Design 3.
+- Diseño limpio.
+- Tipografía legible.
+- Iconos intuitivos.
+- Colores consistentes.
+- Modo claro y oscuro.
+- Botones grandes para operaciones frecuentes.
+- Navegación inferior en Android.
+- Formularios organizados.
+- Mensajes de validación comprensibles.
+- Indicadores de carga.
+- Confirmación de operaciones importantes.
+
+La aplicación debe poder utilizarse cómodamente con una mano.
+
+Priorizar rapidez en caja y escaneo de productos.
+
+Crear una navegación principal con:
+
+1. Inicio.
+2. Ventas.
+3. Inventario.
+4. Finanzas.
+5. Más.
+
+Dentro de Más incluir clientes, proveedores, compras, reportes, contabilidad, empleados y configuración.
+
+20. CONFIGURACIÓN GENERAL
+
+Permitir configurar:
+
+- Nombre del negocio.
+- Logotipo.
+- Moneda.
+- Zona horaria.
+- Idioma.
+- Impuestos.
+- Formato de factura.
+- Impresora predeterminada.
+- Numeración.
+- Categorías.
+- Permisos.
+- Alertas.
+- Sincronización.
+- Sucursales.
+
+Configuración inicial:
+
+País: Nicaragua.
+
+Moneda: Córdoba nicaragüense (NIO, C$).
+
+Idioma: español.
+
+Formato de papel: carta.
+
+Permitir cambiar estos valores.
+
+No fijar tasas tributarias sin configuración y validación según la normativa vigente.
+
+21. FUNCIONALIDADES ADICIONALES
+
+Agregar también:
+
+- Promociones y descuentos.
+- Combos de productos.
+- Precios por volumen.
+- Programa de fidelización.
+- Cotizaciones.
+- Apartados y reservas.
+- Devoluciones.
+- Notas de crédito.
+- Alertas de reposición.
+- Lista automática de compras sugeridas.
+- Importación y exportación CSV/Excel.
+- Gestión de varias bodegas.
+- Control de caja por turnos.
+- Registro de auditoría de empleados.
+- Búsqueda global.
+- Historial de actividades.
+- Centro de notificaciones.
+- Ayuda contextual.
+
+22. FLUJO DE DESARROLLO
+
+No intentes construir todas las funciones superficialmente en una sola entrega.
+
+Organiza el proyecto en módulos funcionales.
+
+Fase 1: Núcleo operativo
+
+Implementar:
+
+- Interfaz principal.
+- Inicio de sesión.
+- Creación de negocios.
+- Firebase.
+- Productos.
+- Inventario.
+- Clientes.
+- Ventas.
+- Carrito.
+- Escaneo QR.
+- Facturación PDF.
+
+Fase 2: Operaciones comerciales
+
+Implementar:
+
+- Proveedores.
+- Compras.
+- Fiados.
+- Abonos.
+- Caja.
+- Gastos.
+- Etiquetas QR imprimibles.
+
+Fase 3: Contabilidad
+
+Implementar:
+
+- Catálogo de cuentas.
+- Libro diario.
+- Libro mayor.
+- Cuentas por cobrar.
+- Cuentas por pagar.
+- Estados financieros.
+- Préstamos.
+
+Fase 4: Integraciones
+
+Implementar:
+
+- Google Sheets.
+- Google Drive.
+- Google Calendar.
+- Impresoras térmicas.
+- Modo sin conexión.
+
+Fase 5: Funciones avanzadas
+
+Implementar:
+
+- Múltiples sucursales.
+- Reportes avanzados.
+- Alertas inteligentes.
+- Farmacias.
+- Auditoría avanzada.
+- Optimización y pruebas.
+
+23. REQUISITOS DE CALIDAD
+
+Todo módulo debe incluir:
+
+- Código funcional.
+- Persistencia real.
+- Validación de datos.
+- Manejo de errores.
+- Estados de carga.
+- Confirmación de operaciones.
+- Seguridad.
+- Pruebas básicas.
+- Integración con módulos relacionados.
+
+No utilizar datos ficticios como si fueran operaciones reales.
+
+Los datos de demostración deberán identificarse claramente.
+
+No crear botones sin funcionalidad ni pantallas vacías presentadas como terminadas.
+
+24. INSTRUCCIÓN FINAL
+
+Comienza construyendo la aplicación NEXO POS desde su arquitectura base.
+
+Primero genera una interfaz visual completamente navegable, moderna y optimizada para Android.
+
+Después implementa progresivamente el backend, la autenticación y las funciones operativas.
+
+Prioriza que el flujo completo registrar producto → generar QR → escanear → agregar al carrito → vender → descontar inventario → generar factura funcione correctamente de principio a fin.
+
+Diseña desde el principio la estructura necesaria para incorporar los demás módulos sin reescribir toda la aplicación.
+
+Si necesitas credenciales de Firebase, permisos de Google o configuraciones externas, solicítalos de forma específica en el momento adecuado.
+
+No declares implementada una integración que todavía no esté conectada.
+
+Entrega código organizado, componentes reutilizables y una solución preparada para evolucionar a producción.

@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "NEXO POS",
+      "hasCanvas": false,
+      "bodyTextLen": 271,
+      "bodyTextHash": "462270d9f8f36662d7c9050d2d27cab7116835892e755d9558509469b2671a09",
+      "bodyTextPrefix": "NEXO POS El mostrador en el teléfono. Registre productos, imprim",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "NEXO POS",
+      "hasCanvas": false,
+      "bodyTextLen": 33,
+      "bodyTextHash": "41b97964daf35c66da0436c046dc6225488a9212da159665c34dc2c9d189a04b",
+      "bodyTextPrefix": "NEXO POS Preparando el mostrador…",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text changed (33 -> 271 chars, hash mismatch)"
+  ]
+}
