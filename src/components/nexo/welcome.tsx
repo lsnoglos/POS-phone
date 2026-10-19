@@ -28,14 +28,14 @@ export function Welcome() {
         </div>
       </div>
       <div className="mt-8 space-y-3">
-        {GROK_PROVIDERS.map((provider) => (
+        {GROK_PROVIDERS.filter((provider) => provider.idp === "google").map((provider) => (
           <button
             key={provider.providerId}
             type="button"
             className="min-h-12 w-full rounded-2xl bg-ink px-4 font-semibold text-paper"
             onClick={() => void signIn(provider.providerId, { callbackURL: "/" })}
           >
-            Continuar con {provider.label === "X" ? "X" : "Google"}
+            Continuar con Google
           </button>
         ))}
         <p className="text-center text-xs text-muted">Nicaragua · Córdoba · Español</p>
