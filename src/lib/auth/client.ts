@@ -37,6 +37,9 @@ export const authClient = createAuthClient({
  */
 export const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== "false";
 
+/** Use the app's own Google Cloud OAuth credentials on a standalone domain. */
+const directGoogleEnabled = import.meta.env.VITE_GOOGLE_DIRECT_AUTH === "true";
+
 /** The upstream providers to render sign-in buttons for. */
 export { GROK_PROVIDERS };
 
@@ -106,7 +109,7 @@ export async function signIn(
   // Open the popup SYNCHRONOUSLY on the user gesture — before any await
   // (including signOut). Awaiting first drops user-gesture privilege in some
   // browsers when the opener is a cross-origin live-preview iframe.
-  const popup = inLivePreview() ? openSignInPopup(providerId) : null;
+  const popup = inLivePreview() && !directGoogleEnabled ? openSignInPopup(providerId) : null;
 
   // Clear any prior session so switching providers actually switches identity.
   // Bounded because the popup is already open — a request that never settles
@@ -119,6 +122,18 @@ export async function signIn(
     requestSignOut: () => authClient.signOut(),
     clearToken: () => setBearerToken(null),
   });
+
+  if (directGoogleEnabled) {
+    if (providerId !== "grok-google") throw new Error("Only Google sign-in is available");
+    const { data, error } = await authClient.signIn.social({
+      provider: "google",
+      callbackURL,
+      errorCallbackURL,
+    });
+    if (error) throw new Error(error.message ?? "Google sign-in failed");
+    if (data?.url) window.location.href = data.url;
+    return;
+  }
 
   if (inLivePreview()) {
     if (!popup) throw new Error("Pop-up blocked — allow pop-ups for sign-in");
