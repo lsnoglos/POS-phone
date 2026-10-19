@@ -101,7 +101,7 @@ export function Pos() {
       if (flushing) return;
       flushing = true;
       const queue = readOutbox();
-      if (!queue.length) return;
+      if (!queue.length) { flushing = false; return; }
       const left: CheckoutInput[] = [];
       for (const job of queue) {
         try {
@@ -111,8 +111,12 @@ export function Pos() {
           left.push(job);
         }
       }
-      localStorage.setItem(OUTBOX, JSON.stringify(left));
-      setOutbox(left.filter((job) => job.businessId === business.id).length);
+      // Never overwrite newly queued sales while a previous batch was being synchronized.
+      const inBatch = new Set(queue.map((job) => job.clientId));
+      const newer = readOutbox().filter((job) => !inBatch.has(job.clientId));
+      const remaining = [...left, ...newer];
+      localStorage.setItem(OUTBOX, JSON.stringify(remaining));
+      setOutbox(remaining.filter((job) => job.businessId === business.id).length);
       flushing = false;
       if (left.length !== queue.length) {
         toast.success("Se sincronizaron ventas pendientes");
@@ -252,25 +256,36 @@ export function Pos() {
     };
     setBusy(true);
     try {
-      const result = await checkoutFn({ data: payload });
-      if (!result.ok) {
-        toast.error(result.error);
+      let result: Awaited<ReturnType<typeof checkoutFn>>;
+      try {
+        result = await checkoutFn({ data: payload });
+      } catch {
+        // A dropped response can arrive AFTER the server committed the sale.
+        // Keep this exact clientId when replaying so the backend can deduplicate.
+        const queue = readOutbox();
+        if (!queue.some((job) => job.clientId === payload.clientId)) queue.push(payload);
+        localStorage.setItem(OUTBOX, JSON.stringify(queue));
+        setOutbox(queue.filter((job) => job.businessId === business.id).length);
+        toast.message("Venta pendiente de verificar. No la cobre otra vez; se sincronizará con el mismo identificador.");
+        setLines([]);
+        setCartOpen(false);
         return;
       }
+      if (!result.ok) { toast.error(result.error); return; }
       toast.success(result.data.idempotent ? "Esa venta ya estaba registrada" : `Venta ${result.data.number}`);
-      const doc = await getSaleFn({ data: { businessId: business.id, saleId: result.data.saleId } });
-      setReceipt(doc);
+      // The sale has been committed; a receipt retrieval failure must never queue it again.
       setLines([]);
       setCartOpen(false);
+      setCustomerId(null);
+      setOrderDiscount("0");
+      setTendered("");
       void qc.invalidateQueries();
-    } catch {
-      const queue = readOutbox();
-      queue.push(payload);
-      localStorage.setItem(OUTBOX, JSON.stringify(queue));
-      setOutbox(queue.length);
-      toast.message("Sin conexión. La venta quedó guardada en este teléfono.");
-      setLines([]);
-      setCartOpen(false);
+      try {
+        const doc = await getSaleFn({ data: { businessId: business.id, saleId: result.data.saleId } });
+        setReceipt(doc);
+      } catch {
+        toast.error("Venta registrada. Consulte el historial para imprimir el comprobante.");
+      }
     } finally {
       setBusy(false);
     }
@@ -542,63 +557,102 @@ export function Pos() {
   );
 }
 
-function Scanner({ onCode }: { onCode: (code: string) => void }) {
+function Scanner({ onCode }: { onCode: (code: string) => Promise<boolean> }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onCodeRef = useRef(onCode);
   onCodeRef.current = onCode;
-  const [help, setHelp] = useState("Apunte al QR del estante o al código de barras.");
+  const [help, setHelp] = useState("Iniciando cámara…");
+
   useEffect(() => {
-    let stop = false;
+    let stopped = false;
     let stream: MediaStream | null = null;
-    const Detector = (
-      window as unknown as {
-        BarcodeDetector?: new (opts?: { formats?: string[] }) => {
-          detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
-        };
-      }
-    ).BarcodeDetector;
+    let timer: number | undefined;
+    let heldCode = "";
+    let missingFrames = 0;
+    const Detector = (window as unknown as {
+      BarcodeDetector?: new (opts?: { formats?: string[] }) => {
+        detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
+      };
+    }).BarcodeDetector;
+
     void (async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setHelp("Este navegador no abre la cámara. Escriba el código abajo.");
+        setHelp("El navegador no permite abrir la cámara. Introduzca el código manualmente.");
         return;
       }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        if (!Detector) {
-          setHelp("La cámara está activa, pero este navegador no decodifica códigos. Escriba el código.");
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false, video: { facingMode: { ideal: "environment" } },
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+        }
+        if (stopped || !videoRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
           return;
         }
-        const detector = new Detector({ formats: ["qr_code", "ean_13", "ean_8", "code_128", "upc_a", "upc_e", "code_39"] });
+        const video = videoRef.current;
+        video.srcObject = stream;
+        await video.play();
+
+        if (!Detector) {
+          setHelp("Cámara activa, pero este navegador no tiene detector de QR. Utilice otro navegador compatible o introduzca el código.");
+          return;
+        }
+        let detector: InstanceType<typeof Detector>;
+        try {
+          detector = new Detector({
+            formats: ["qr_code", "ean_13", "ean_8", "code_128", "upc_a", "upc_e", "code_39"],
+          });
+        } catch {
+          detector = new Detector();
+        }
+        setHelp("Escanee un QR. Retírelo del cuadro para poder leerlo nuevamente.");
+
         const tick = async () => {
-          if (stop || !videoRef.current) return;
+          if (stopped) return;
           try {
-            const found = await detector.detect(videoRef.current);
-            if (found[0]?.rawValue) {
-              onCodeRef.current(found[0].rawValue);
-              return;
+            const codes = await detector.detect(video);
+            const code = codes[0]?.rawValue?.trim() || "";
+            if (!code) {
+              missingFrames += 1;
+              if (missingFrames >= 3) heldCode = "";
+            } else {
+              missingFrames = 0;
+              // A stationary QR is seen on dozens of consecutive frames.
+              // Only count it again after it leaves the camera and comes back.
+              if (code !== heldCode) {
+                heldCode = code;
+                const ok = await onCodeRef.current(code);
+                if (!stopped) setHelp(ok ? "Producto agregado. Escanee el siguiente código." : "Código no reconocido. Pruebe nuevamente.");
+              }
             }
           } catch {
-            /* frame */
+            // A temporary blurred frame must not terminate continuous scanning.
           }
-          if (!stop) requestAnimationFrame(() => void tick());
+          if (!stopped) timer = window.setTimeout(() => void tick(), 180);
         };
         void tick();
-      } catch {
-        setHelp("No se permitió la cámara. Puede escribir el código.");
+      } catch (error) {
+        const reason = error instanceof Error && error.name === "NotAllowedError"
+          ? "Permiso de cámara denegado. Autorícelo en los ajustes del navegador."
+          : "No se pudo iniciar la cámara. Compruebe permisos, HTTPS y que no esté siendo utilizada.";
+        if (!stopped) setHelp(reason);
       }
     })();
+
     return () => {
-      stop = true;
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
       stream?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
   return (
     <div>
       <video ref={videoRef} className="h-52 w-full rounded-2xl bg-ink object-cover" muted playsInline />
-      <p className="mt-2 text-sm text-muted">{help}</p>
+      <p className="mt-2 text-sm text-muted" role="status">{help}</p>
     </div>
   );
 }
