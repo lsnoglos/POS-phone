@@ -81,9 +81,18 @@ const grokIssuer = env("GROK_AUTH_ISSUER") ?? GROK_ISSUER_DEFAULT;
 const grokClientId = env("GROK_AUTH_CLIENT_ID") ?? PREVIEW_CLIENT_ID;
 const grokClientSecret = env("GROK_AUTH_CLIENT_SECRET") ?? PREVIEW_CLIENT_SECRET;
 
-/** True when federated sign-in is active (real auth is enforced). */
-export const authConfigured =
-  !authDisabled && Boolean(grokClientId && grokClientSecret);
+// Standalone Vercel/Android builds can use Google directly instead of relying
+// on Grok's preview-only OAuth broker and its host allowlist.
+const directGoogleEnabled = env("VITE_GOOGLE_DIRECT_AUTH") === "true";
+const googleClientId = env("GOOGLE_CLIENT_ID");
+const googleClientSecret = env("GOOGLE_CLIENT_SECRET");
+if (directGoogleEnabled && !authDisabled && (!googleClientId || !googleClientSecret)) {
+  throw new Error("Configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for direct Google sign-in.");
+}
+
+/** True when the chosen identity provider is configured. */
+export const authConfigured = !authDisabled &&
+  (directGoogleEnabled ? Boolean(googleClientId && googleClientSecret) : Boolean(grokClientId && grokClientSecret));
 
 // This app's own Better Auth origin. When deployed the deployer injects the
 // public URL. In the sandbox live preview there's no fixed URL (each preview gets
@@ -150,7 +159,7 @@ export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
 
 // Built separately so the `betterAuth({...})` call stays easy to edit without
 // breaking brackets (models often trip on the conditional plugin spread).
-const grokOAuthPlugin = authConfigured
+const grokOAuthPlugin = authConfigured && !directGoogleEnabled
   ? genericOAuth({
       config: GROK_PROVIDERS.map(({ providerId, idp }) => ({
         providerId,
@@ -178,6 +187,11 @@ export const auth = betterAuth({
   // globalThis so HMR doesn't invalidate PGLite-backed sessions (see above).
   secret: env("BETTER_AUTH_SECRET") ?? previewAuthSecret(),
   database,
+  // The standard Better Auth callback for this provider is
+  // https://<app-domain>/api/auth/callback/google.
+  ...(directGoogleEnabled && authConfigured && googleClientId && googleClientSecret
+    ? { socialProviders: { google: { clientId: googleClientId, clientSecret: googleClientSecret } } }
+    : {}),
 
   // CSRF / origin check for credentialed auth POSTs (email sign-up/sign-in, …).
   // See `trustedOrigins` construction above — must cover live preview hosts AND
@@ -196,6 +210,7 @@ export const auth = betterAuth({
       enabled: true,
       trustedProviders: [
         ...GROK_PROVIDERS.map((p) => p.providerId),
+        ...(directGoogleEnabled ? ["google"] : []),
         GATE_PROVIDER_ID,
       ],
       // X's synthetic email is never "verified", so don't gate linking on the
