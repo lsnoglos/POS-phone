@@ -15,8 +15,15 @@
 4. Crear **una base PostgreSQL exclusiva para pruebas**. Configurar `DATABASE_URL` como variable secreta para el despliegue. La base local PGLite no es persistente ni apropiada para funciones serverless de producción.
 5. Configurar `BETTER_AUTH_URL=https://<dominio-real>` y un `BETTER_AUTH_SECRET` largo generado de forma segura.
 6. Mantener `VITE_AUTH_ENABLED=true` (NO usar la cuenta local de desarrollo).
-7. **Autenticación Google:** el código actual usa el broker OAuth de Grok, cuyo cliente de vista previa autoriza `*.grok-sandbox.com`, no un dominio genérico Vercel. Para desplegar con login real en Vercel hay que configurar credenciales OAuth de servidor válidas para este dominio mediante `GROK_AUTH_ISSUER`, `GROK_AUTH_CLIENT_ID` y `GROK_AUTH_CLIENT_SECRET`, **si el broker autoriza registrar este dominio**, o migrar la integración a Google OAuth directo (necesita cambios en servidor/cliente y credenciales de Google Cloud). No hay que copiar secretos de vista previa para producción.
-8. Registrar la URI de redirección exacta de Better Auth en el proveedor OAuth configurado.
+7. **Autenticación directa con Google:** crear un cliente OAuth 2.0 de tipo **Aplicación web** en Google Cloud, configurar la pantalla de consentimiento y añadir el dominio del proyecto a los orígenes autorizados. En las variables de Vercel, configurar:
+   - `VITE_AUTH_ENABLED=true`
+   - `VITE_GOOGLE_DIRECT_AUTH=true`
+   - `GOOGLE_CLIENT_ID` (server-side)
+   - `GOOGLE_CLIENT_SECRET` (server-side, secreto)
+   - `BETTER_AUTH_URL=https://<dominio-real>`
+   - `BETTER_AUTH_SECRET` (secreto)
+   - `DATABASE_URL` (secreto PostgreSQL)
+8. Registrar el URI de redirección autorizado **exacto**: `https://<dominio-real>/api/auth/callback/google`. No usar la credencial OAuth de vista previa de Grok para el dominio Vercel. La aplicación conserva el broker anterior solamente cuando `VITE_GOOGLE_DIRECT_AUTH` no está activado.
 9. Publicar un despliegue de **Preview** y verificar el login, la base, la integridad del inventario y la descarga de tickets.
 10. Restringir el acceso a la versión de pruebas y usar datos ficticios.
 
