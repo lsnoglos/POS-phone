@@ -135,6 +135,12 @@ const trustedOrigins: string[] = explicitBaseURL
     ];
 
 const databaseUrl = env("DATABASE_URL");
+// A standalone deployment must never accidentally fall back to local PGLite or
+// process-random session secrets. Those are appropriate for preview only.
+if (directGoogleEnabled && !authDisabled &&
+    (!databaseUrl || !env("BETTER_AUTH_SECRET") || !env("BETTER_AUTH_URL"))) {
+  throw new Error("Standalone NEXO POS requires DATABASE_URL, BETTER_AUTH_SECRET and BETTER_AUTH_URL.");
+}
 
 // Static broker OAuth endpoints (skip OIDC discovery on every sign-in / callback).
 // Discovery would cost an extra network hop to the broker before the popup can
