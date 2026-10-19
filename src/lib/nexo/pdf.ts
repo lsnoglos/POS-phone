@@ -199,11 +199,23 @@ export async function labelsBlob(options: LabelOptions) {
       doc.text(options.businessName.slice(0, 28), cell.x + cell.w / 2, cursor, { align: "center" });
       cursor += 3.5;
     }
-    const qrSize = Math.min(cell.w * 0.42, cell.h * 0.46);
-    if (options.showQr) {
-      const image = await qrData(qrPayload(product.id));
-      doc.addImage(image, "PNG", cell.x + (cell.w - qrSize) / 2, cursor, qrSize, qrSize);
-      cursor += qrSize + 1.5;
+    const hasPhoto = options.showPhoto && Boolean(product.photo?.startsWith("data:image/"));
+    const visualSize = Math.min(cell.w * (hasPhoto && options.showQr ? 0.34 : 0.44), cell.h * 0.44, 22);
+    if (options.showQr || hasPhoto) {
+      if (hasPhoto && product.photo) {
+        try {
+          const photoX = options.showQr ? cell.x + cell.w / 2 - visualSize - 2 : cell.x + (cell.w - visualSize) / 2;
+          doc.addImage(product.photo, photoX, cursor, visualSize, visualSize);
+        } catch {
+          // An unreadable image must not prevent printing the QR label.
+        }
+      }
+      if (options.showQr) {
+        const image = await qrData(qrPayload(product.id));
+        const qrX = hasPhoto ? cell.x + cell.w / 2 + 2 : cell.x + (cell.w - visualSize) / 2;
+        doc.addImage(image, "PNG", qrX, cursor, visualSize, visualSize);
+      }
+      cursor += visualSize + 1.5;
     }
     if (options.showName) {
       doc.setFont("helvetica", "bold");
