@@ -131,7 +131,7 @@ export function NexoApp({ user }: { user: AppUser }) {
         )}
         <main className="page-pad px-4 py-3 lg:pb-8">
           {area === "inicio" && <Dashboard />}
-          {area === "venta" && <Pos />}
+          {area === "venta" && <Pos key={`${business.id}:${value.branchId}`} />}
           {area === "inventario" && <Inventory />}
           {area === "finanzas" && <Finance />}
           {area === "mas" && <More />}
