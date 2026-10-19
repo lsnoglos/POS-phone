@@ -31,7 +31,7 @@ export function NexoApp({ user }: { user: AppUser }) {
   const displayName = user.displayName || user.primaryEmail || "Propietario";
   useEffect(() => {
     try {
-      if (sessionStorage.getItem("nexo-product-draft")) setArea("inventario");
+      if (sessionStorage.getItem("nexo-product-draft")) { setArea("inventario"); setScreen("lista"); }
     } catch {
       /* session storage can be blocked */
     }
@@ -72,7 +72,7 @@ export function NexoApp({ user }: { user: AppUser }) {
       screen,
       go: (next: Area, nextScreen = "menu") => {
         setArea(next);
-        setScreen(nextScreen || "menu");
+        setScreen(next === "inventario" && nextScreen === "menu" ? "lista" : nextScreen || "menu");
       },
     };
   }, [business, businesses.data, branchId, displayName, area, screen, user.id]);
