@@ -100,7 +100,8 @@ export function Pos() {
     const flush = async () => {
       if (flushing) return;
       flushing = true;
-      const queue = readOutbox();
+      // Only sync sales for the currently selected business.
+      const queue = readOutbox().filter((job) => job.businessId === business.id);
       if (!queue.length) { flushing = false; return; }
       const left: CheckoutInput[] = [];
       for (const job of queue) {
@@ -173,18 +174,18 @@ export function Pos() {
     totalError = error instanceof Error ? error.message : "Revise el carrito";
   }
 
-  function addProduct(product: Product, note = "") {
+  function addProduct(product: Product, note = ""): boolean {
     if (!product.active) {
       toast.error("Ese producto está inactivo");
-      return;
+      return false;
     }
     if (product.expiresOn && product.expiresOn < today) {
       toast.error(`${product.name} está vencido`);
-      return;
+      return false;
     }
     if (product.regulated && !note) {
       const typed = window.prompt(`Referencia de receta o autorización para ${product.name}`) ?? "";
-      if (!typed.trim()) return;
+      if (!typed.trim()) return false;
       note = typed.trim();
     }
     setLines((current) => {
@@ -206,6 +207,7 @@ export function Pos() {
       ];
     });
     navigator.vibrate?.(12);
+    return true;
   }
 
   async function onScan(raw: string): Promise<boolean> {
@@ -213,7 +215,7 @@ export function Pos() {
     try {
       const result = await resolveCodeFn({ data: { businessId: business.id, branchId, raw: raw.trim() } });
       if (!result.ok) { toast.error(result.error); return false; }
-      addProduct(result.data);
+      if (!addProduct(result.data)) return false;
       setLastScanned(result.data.name);
       setManualCode("");
       return true;
@@ -224,7 +226,19 @@ export function Pos() {
   }
 
   async function sell() {
-    if (!totals || !priced.length) return;
+    if (busy || !totals || !priced.length) return;
+    if (method === "credit" && !customerId) {
+      toast.error("Seleccione un cliente para vender fiado");
+      return;
+    }
+    const paid = tendered.trim() ? Math.round(Number(tendered) * 100) : totals.totalCents;
+    const part = Math.round(Number(cashPart || 0) * 100);
+    if ((method === "cash" && (!Number.isFinite(paid) || paid < totals.totalCents)) ||
+        (method === "mixed" && (!Number.isFinite(part) || part <= 0 || part >= totals.totalCents ||
+          (tendered.trim() && (!Number.isFinite(paid) || paid < part))))) {
+      toast.error("Revise el efectivo: el importe debe cubrir la cantidad que se cobra.");
+      return;
+    }
     const cashCents = method === "mixed" ? Math.round(Number(cashPart || 0) * 100) : method === "cash" ? totals.totalCents : 0;
     const rest = totals.totalCents - cashCents;
     const payments: CheckoutInput["payments"] = [];
@@ -235,8 +249,7 @@ export function Pos() {
     } else if (method === "mixed" && rest > 0) {
       payments.push({ method: "transfer", amountCents: rest, reference, confirmed });
     }
-    const tender =
-      cashCents > 0 ? Math.max(cashCents, Math.round(Number((tendered || cashCents / 100).toString()) * 100) || cashCents) : 0;
+    const tender = cashCents > 0 ? Math.max(cashCents, tendered.trim() ? paid : cashCents) : 0;
     const payload: CheckoutInput = {
       businessId: business.id,
       branchId,
