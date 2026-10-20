@@ -25,6 +25,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.*
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -101,8 +102,18 @@ class MainActivity : Activity() {
             orientation=LinearLayout.VERTICAL;setBackgroundColor(cream)
             setPadding(dp(12),dp(3),dp(12),dp(4))
         }
+        root.setOnApplyWindowInsetsListener { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsets.Type.statusBars() or
+                    WindowInsets.Type.navigationBars() or
+                    WindowInsets.Type.displayCutout()
+            )
+            view.setPadding(dp(12) + bars.left, dp(3) + bars.top, dp(12) + bars.right, dp(4) + bars.bottom)
+            insets
+        }
         setContentView(root)
         render()
+        root.requestApplyInsets()
     }
     private fun dp(i:Int)=(i*resources.displayMetrics.density).toInt()
     private fun money(cents:Long):String = "C$"+BigDecimal.valueOf(cents,2).setScale(2).toPlainString()
