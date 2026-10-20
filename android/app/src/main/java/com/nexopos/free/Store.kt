@@ -132,4 +132,49 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,1){
         }
         return result
     }
+
+    /**
+     * Restore every related table together. A malformed backup never erases
+     * locally stored sales. Call only after the user confirms replacement.
+     */
+    @Synchronized fun restore(tables:Map<String,List<List<String>>>){
+        val headers=mapOf(
+            "Productos" to listOf("id","name","category","barcode","cost","price","qty","photo","updated"),
+            "Ventas" to listOf("id","date","party_id","customer","method","total"),
+            "DetalleVentas" to listOf("id","sale_id","product_id","name","qty","price"),
+            "Clientes" to listOf("id","type","name","phone","balance"),
+            "Proveedores" to listOf("id","type","name","phone","balance"),
+            "Abonos" to listOf("id","date","party_id","amount"))
+        for((name,columns) in headers){
+            require(tables[name]?.firstOrNull()==columns){"Archivo incompatible o dañado: "+name}
+            for(row in tables[name]!!.drop(1))require(row.size==columns.size){"Datos incompletos en "+name}
+        }
+        val db=writableDatabase
+        db.beginTransaction()
+        try{
+            listOf("payments","lines","sales","parties","products").forEach{
+                db.execSQL("DELETE FROM "+it)
+            }
+            for(row in tables.getValue("Productos").drop(1)){
+                require(row[1].isNotBlank()&&row[4].toLong()>=0&&row[5].toLong()>=0&&row[6].toInt()>=0)
+                db.execSQL("INSERT INTO products(id,name,category,barcode,cost,price,qty,photo,updated) VALUES(?,?,?,?,?,?,?,?,?)",
+                    arrayOf(row[0],row[1],row[2],row[3],row[4].toLong(),row[5].toLong(),row[6].toInt(),row[7],row[8]))
+            }
+            for(tab in listOf("Clientes","Proveedores"))for(row in tables.getValue(tab).drop(1)){
+                val type=if(tab=="Clientes")"cliente" else "proveedor"
+                db.execSQL("INSERT INTO parties(id,type,name,phone,balance) VALUES(?,?,?,?,?)",
+                    arrayOf(row[0],type,row[2],row[3],row[4].toLong()))
+            }
+            for(row in tables.getValue("Ventas").drop(1))
+                db.execSQL("INSERT INTO sales(id,date,party_id,customer,method,total) VALUES(?,?,?,?,?,?)",
+                    arrayOf(row[0],row[1],row[2].ifBlank{null},row[3],row[4],row[5].toLong()))
+            for(row in tables.getValue("DetalleVentas").drop(1))
+                db.execSQL("INSERT INTO lines(id,sale_id,product_id,name,qty,price) VALUES(?,?,?,?,?,?)",
+                    arrayOf(row[0],row[1],row[2],row[3],row[4].toInt(),row[5].toLong()))
+            for(row in tables.getValue("Abonos").drop(1))
+                db.execSQL("INSERT INTO payments(id,date,party_id,amount) VALUES(?,?,?,?)",
+                    arrayOf(row[0],row[1],row[2],row[3].toLong()))
+            db.setTransactionSuccessful()
+        }finally{db.endTransaction()}
+    }
 }
