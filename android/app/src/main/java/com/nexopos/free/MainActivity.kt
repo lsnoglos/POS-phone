@@ -49,6 +49,7 @@ class MainActivity : Activity() {
     private var purchaseInvoice=""
     private var purchaseFreight="0"
     private val cart = linkedMapOf<String,Int>()
+    private var saleQuery=""
     private var chosenCustomer: String? = null
     private var chosenMethod = "Efectivo"
     private var photoUri = ""
@@ -69,6 +70,14 @@ class MainActivity : Activity() {
         store=Store(this)
         ops=BusinessOps(store)
         google=GoogleCloud(this,store)
+        try{
+            val json=org.json.JSONObject(getSharedPreferences("nexo_cart",Context.MODE_PRIVATE).getString("pending", "{}")?:"{}")
+            val keys=json.keys()
+            while(keys.hasNext()){
+                val id=keys.next();val qty=json.optInt(id)
+                if(qty>0 && store.products().any{it.id==id})cart[id]=qty
+            }
+        }catch(_:Exception){}
         root=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL;setBackgroundColor(cream)
             setPadding(dp(12),dp(10),dp(12),dp(8))
@@ -229,106 +238,140 @@ class MainActivity : Activity() {
             Triple("Cuenta de Google","Sesión, Drive, Sheets y respaldos","Google")
         ).forEach{navigate(it.first,it.second,it.third)}
     }
+    private fun rememberCart(){
+        val json=org.json.JSONObject()
+        cart.forEach{(id,qty)->json.put(id,qty)}
+        getSharedPreferences("nexo_cart",Context.MODE_PRIVATE).edit()
+            .putString("pending",json.toString()).apply()
+    }
     private fun cartAdd(product:Product){
         if(product.qty<=0){toast("Sin existencias: "+product.name);return}
         val current=cart[product.id]?:0
         if(current>=product.qty){toast("Se alcanzó la existencia disponible");return}
         cart[product.id]=current+1
-        render()
+        rememberCart();render()
     }
     private fun renderSale(){
-        body.addView(title("Nueva venta"))
-        val scan=btn("Escanear QR o código de barras"){openScanner()}
-        body.addView(scan,LinearLayout.LayoutParams(-1,dp(50)))
-        val search=field("Buscar producto o código…")
+        body.addView(title("Nueva venta",25f))
+        addButton(body,"▣  Escanear QR continuamente"){openScanner()}
+        val search=field("Buscar producto, categoría, SKU o código",saleQuery)
         body.addView(search)
-        val productsBox=column()
-        body.addView(productsBox)
-        fun draw(filter:String){
-            productsBox.removeAllViews()
-            val found=store.products().filter{it.name.contains(filter,true)||it.barcode.contains(filter,true)}
-            found.take(30).forEach{p->
-                val line=row()
-                val desc=info(p.name+"  ·  "+money(p.price)+"  ·  hay "+p.qty)
-                line.addView(desc,LinearLayout.LayoutParams(0,-2,1f))
-                line.addView(btn("+ Agregar"){cartAdd(p)})
-                productsBox.addView(line)
-            }
-            if(found.isEmpty())productsBox.addView(info("No hay productos para mostrar."))
-        }
-        draw("")
-        search.addTextChangedListener(object:TextWatcher{
-            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
-            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){draw(s.toString())}
-            override fun afterTextChanged(s:Editable?){}
-        })
-        body.addView(title("Carrito ("+cart.values.sum()+" productos)"))
+        body.addView(title("Carrito · "+cart.values.sum()+" artículos",20f))
+        val list=store.products()
+        val selected=card()
         var total=0L
+        if(cart.isEmpty())selected.addView(info("Agregue productos desde el catálogo o utilice la cámara."))
         cart.toMap().forEach{(id,qty)->
-            val p=store.products().firstOrNull{it.id==id}?:return@forEach
-            total+=p.price*qty
-            val line=row()
-            line.addView(info(p.name+" × "+qty+"  ·  "+money(p.price*qty)),LinearLayout.LayoutParams(0,-2,1f))
-            line.addView(btn("−"){
-                if(qty==1)cart.remove(id) else cart[id]=qty-1
-                render()
+            val product=list.firstOrNull{it.id==id}?:return@forEach
+            total+=product.price*qty
+            val row=row()
+            row.addView(info(product.name+" × "+qty+"\n"+money(product.price*qty)),
+                LinearLayout.LayoutParams(0,-2,1f))
+            row.addView(btn("−"){
+                if(qty<=1)cart.remove(id)else cart[id]=qty-1
+                rememberCart();render()
             })
-            line.addView(btn("+"){
-                if(qty<p.qty)cart[id]=qty+1 else toast("Sin existencias adicionales")
-                render()
+            row.addView(btn(qty.toString()){
+                val amount=field("Cantidad",qty.toString(),true)
+                AlertDialog.Builder(this).setTitle(product.name)
+                    .setView(amount).setNegativeButton("Cancelar",null)
+                    .setPositiveButton("Actualizar"){_,_->
+                        val value=amount.text.toString().toIntOrNull()?:0
+                        if(value in 1..product.qty){cart[id]=value;rememberCart();render()}
+                        else toast("Ingrese entre 1 y "+product.qty+" unidades")
+                    }.show()
             })
-            body.addView(line)
+            row.addView(btn("+"){
+                if(qty<product.qty){cart[id]=qty+1;rememberCart();render()}
+                else toast("No hay más existencias")
+            })
+            selected.addView(row)
         }
-        body.addView(title("Total: "+money(total),24f))
-        val customers=store.parties("cliente")
-        body.addView(info("Cliente:"))
-        val customerNames=listOf("Consumidor final")+customers.map{it.name}
-        val customerSelect=Spinner(this)
-        customerSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,customerNames)
-        val pos=customers.indexOfFirst{it.id==chosenCustomer}
-        customerSelect.setSelection(if(pos<0)0 else pos+1)
-        customerSelect.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
-            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
-            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){
-                chosenCustomer=if(position==0)null else customers[position-1].id
-            }
-        }
-        body.addView(customerSelect,LinearLayout.LayoutParams(-1,dp(50)))
-        body.addView(info("Método de pago:"))
-        val methods=listOf("Efectivo","Transferencia","Tarjeta","Fiado")
-        val methodSelect=Spinner(this)
-        methodSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,methods)
-        methodSelect.setSelection(methods.indexOf(chosenMethod))
-        methodSelect.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
-            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
-            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){chosenMethod=methods[position]}
-        }
-        body.addView(methodSelect,LinearLayout.LayoutParams(-1,dp(50)))
+        body.addView(selected)
+        body.addView(title("Total: "+money(total),25f))
         addButton(body,"Cobrar · "+money(total)){
-            if(cart.isEmpty()){toast("Agregue un producto");return@addButton}
-            if(chosenMethod=="Fiado" && chosenCustomer==null){toast("Seleccione un cliente para el fiado");return@addButton}
-            val cash=field("Efectivo recibido",BigDecimal.valueOf(total,2).toPlainString(),true)
-            val confirm=AlertDialog.Builder(this).setTitle("Confirmar venta · "+money(total))
-            if(chosenMethod=="Efectivo")confirm.setView(cash)
-            confirm.setNegativeButton("Cancelar",null)
-            confirm.setPositiveButton("Cobrar"){_,_->
-                try{
-                    if(chosenMethod=="Efectivo" && cents(cash.text.toString())<total){
-                        toast("Efectivo insuficiente");return@setPositiveButton
-                    }
-                    val result=store.charge(cart.toMap(),chosenCustomer,chosenMethod)
-                    cart.clear();chosenCustomer=null
-                    val change=if(result.method=="Efectivo")cents(cash.text.toString())-result.total else 0L
-                    AlertDialog.Builder(this).setTitle("Venta registrada").setMessage(
-                        "N.º: "+result.id.take(8)+"\nTotal: "+money(result.total)+"\nCambio: "+money(change)+
-                        "\nGuardada en el teléfono. Sincronice desde Google."
-                    ).setPositiveButton("Aceptar",null).show()
-                    render()
-                }catch(e:Exception){toast(e.message?:"No se pudo registrar la venta")}
-            }
-            confirm.show()
+            if(cart.isEmpty())toast("Agregue productos al carrito")
+            else checkoutDialog(total)
         }
-        body.addView(info("Si escanea el mismo QR varias veces, se incrementa una única línea del carrito."))
+        body.addView(title("Catálogo de productos",18f))
+        val catalog=column()
+        body.addView(catalog)
+        fun filter(term:String){
+            catalog.removeAllViews()
+            val match=store.products().filter{p->
+                term.isEmpty()||p.name.contains(term,true)||p.category.contains(term,true)||p.barcode.contains(term,true)
+            }.sortedWith(compareByDescending<Product>{it.qty>0}.thenBy{it.name.lowercase()})
+            match.take(if(term.isBlank())20 else 60).forEach{product->
+                val r=card()
+                val line=row()
+                if(product.photo.isNotBlank()){
+                    val image=ImageView(this).apply{
+                        try{setImageURI(Uri.parse(product.photo))}catch(_:Exception){}
+                        scaleType=ImageView.ScaleType.CENTER_CROP
+                    }
+                    line.addView(image,LinearLayout.LayoutParams(dp(56),dp(56)).apply{rightMargin=dp(10)})
+                }
+                val description=column()
+                description.addView(title(product.name,16f))
+                description.addView(info(money(product.price)+" · hay "+product.qty+
+                    (if(product.category.isNotBlank())" · "+product.category else "")))
+                line.addView(description,LinearLayout.LayoutParams(0,-2,1f))
+                line.addView(btn("+"){cartAdd(product)})
+                r.addView(line)
+                catalog.addView(r,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(5)})
+            }
+            if(match.isEmpty())catalog.addView(info("No se encontraron productos. Regístrelos en Inventario."))
+        }
+        filter(saleQuery)
+        search.addTextChangedListener(simpleWatcher{value->saleQuery=value;filter(value)})
+        body.addView(info("El carrito permanece guardado aunque cambie de pantalla o cierre accidentalmente la aplicación."))
+    }
+    private fun checkoutDialog(total:Long){
+        val form=column().apply{setPadding(dp(13),dp(8),dp(13),dp(6))}
+        val customers=store.parties("cliente")
+        form.addView(info("Cliente"))
+        val customersSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,
+                listOf("Consumidor final")+customers.map{it.name})
+            setSelection((customers.indexOfFirst{it.id==chosenCustomer}+1).coerceAtLeast(0))
+        }
+        form.addView(customersSpinner)
+        form.addView(info("Forma de pago"))
+        val methods=listOf("Efectivo","Transferencia","Tarjeta","Fiado")
+        val methodsSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,methods)
+            setSelection(methods.indexOf(chosenMethod).coerceAtLeast(0))
+        }
+        form.addView(methodsSpinner)
+        val received=field("Efectivo recibido",BigDecimal.valueOf(total,2).toPlainString(),true)
+        form.addView(received)
+        form.addView(info("El efectivo recibido se utiliza únicamente para calcular el cambio en pagos al contado."))
+        val dialog=AlertDialog.Builder(this).setTitle("Confirmar cobro · "+money(total))
+            .setView(form).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Registrar venta",null).create()
+        dialog.setOnShowListener{
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+                try{
+                    val customerIndex=customersSpinner.selectedItemPosition
+                    val customerId=if(customerIndex==0)null else customers[customerIndex-1].id
+                    val payment=methods[methodsSpinner.selectedItemPosition]
+                    if(payment=="Fiado")require(customerId!=null){"Seleccione un cliente registrado para fiar"}
+                    val paid=if(payment=="Efectivo")cents(received.text.toString()) else total
+                    require(paid>=total){"El efectivo recibido es insuficiente"}
+                    val saved=store.charge(cart.toMap(),customerId,payment)
+                    val change=if(payment=="Efectivo")paid-total else 0L
+                    cart.clear();rememberCart();chosenCustomer=null;chosenMethod=payment
+                    dialog.dismiss()
+                    AlertDialog.Builder(this).setTitle("Venta registrada")
+                        .setMessage("Comprobante "+saved.id.take(8)+"\nCliente: "+saved.customer+
+                            "\nTotal: "+money(saved.total)+"\nMétodo: "+saved.method+
+                            "\nCambio: "+money(change)+"\nGuardado en el teléfono.")
+                        .setPositiveButton("Listo",null).show()
+                    render()
+                }catch(e:Exception){toast(e.message?:"No se pudo realizar el cobro")}
+            }
+        }
+        dialog.show()
     }
     private fun renderInventory(){
         body.addView(title("Inventario"))
@@ -780,6 +823,7 @@ class MainActivity : Activity() {
                         if(qty>0)cart[id]=qty
                     }
                 }catch(e:Exception){toast("No se pudo recuperar el carrito del escáner")}
+                rememberCart()
                 tab="Venta";render()
             }
             return
