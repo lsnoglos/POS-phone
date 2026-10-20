@@ -744,9 +744,9 @@ class MainActivity : Activity() {
         body.addView(info("IMPORTANTE: esta primera versión es experimental. No cargue ventas reales sin antes probar la recuperación desde la nube y la impresión."))
     }
     private fun openScanner(){
-        IntentIntegrator(this).setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES)
-            .setPrompt("Escanee el QR del estante o el código de barras")
-            .setBeepEnabled(true).setOrientationLocked(false).initiateScan()
+        val saved=org.json.JSONObject()
+        cart.forEach{(id,qty)->saved.put(id,qty)}
+        startActivityForResult(Intent(this,ContinuousScanActivity::class.java).putExtra("cart",saved.toString()),140)
     }
     private fun createPdf(){
         if(store.products().isEmpty()){toast("Registre productos primero");return}
@@ -765,6 +765,22 @@ class MainActivity : Activity() {
             try{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)}
             catch(_:Exception){}
             photoChanged?.invoke(uri.toString());photoChanged=null;return
+        }
+        if(requestCode==140){
+            if(resultCode==RESULT_OK){
+                try{
+                    val json=org.json.JSONObject(data?.getStringExtra("cart")?:"{}")
+                    cart.clear()
+                    val iterator=json.keys()
+                    while(iterator.hasNext()){
+                        val id=iterator.next()
+                        val qty=json.optInt(id,0)
+                        if(qty>0)cart[id]=qty
+                    }
+                }catch(e:Exception){toast("No se pudo recuperar el carrito del escáner")}
+                tab="Venta";render()
+            }
+            return
         }
         if(requestCode==130){
             pendingPdf=false
