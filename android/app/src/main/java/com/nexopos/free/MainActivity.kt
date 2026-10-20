@@ -55,6 +55,8 @@ class MainActivity : Activity() {
     private var photoUri = ""
     private var photoChanged: ((String)->Unit)? = null
     private var pendingPdf = false
+    private var pdfProducts=emptyList<Product>()
+    private var pdfOptions=LabelPdf.Layout()
     private var google: GoogleCloud? = null
     private val cream = Color.rgb(16,19,16)
     private val surface = Color.rgb(29,33,28)
@@ -810,13 +812,50 @@ class MainActivity : Activity() {
         startActivityForResult(Intent(this,ContinuousScanActivity::class.java).putExtra("cart",saved.toString()),140)
     }
     private fun createPdf(){
-        if(store.products().isEmpty()){toast("Registre productos primero");return}
-        pendingPdf=true
-        val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply{
-            addCategory(Intent.CATEGORY_OPENABLE);type="application/pdf"
-            putExtra(Intent.EXTRA_TITLE,"nexo-etiquetas-carta.pdf")
+        val products=store.products()
+        if(products.isEmpty()){toast("Registre productos primero");return}
+        val box=column().apply{setPadding(dp(14),dp(6),dp(14),0)}
+        box.addView(info("Elija artículos y medidas para imprimir etiquetas con QR en papel carta."))
+        val cols=field("Columnas (1 a 4)",pdfOptions.columns.toString(),true)
+        val rows=field("Filas (1 a 10)",pdfOptions.rows.toString(),true)
+        val copies=field("Copias por producto (1 a 50)",pdfOptions.copies.toString(),true)
+        val margin=field("Margen en milímetros",pdfOptions.marginMm.toString(),true)
+        val gap=field("Separación en milímetros",pdfOptions.gapMm.toString(),true)
+        listOf(cols,rows,copies,margin,gap).forEach{box.addView(it)}
+        val photos=CheckBox(this).apply{text="Incluir fotografía si existe";isChecked=pdfOptions.showPhoto;setTextColor(ink)}
+        val business=CheckBox(this).apply{text="Mostrar nombre del negocio";isChecked=pdfOptions.showBusiness;setTextColor(ink)}
+        box.addView(photos);box.addView(business)
+        box.addView(title("Seleccionar productos",16f))
+        val checkboxes=products.map{p->
+            CheckBox(this).apply{text=p.name+" · "+money(p.price);isChecked=true;setTextColor(ink)}
+                .also{box.addView(it)}
         }
-        startActivityForResult(intent,130)
+        val scroll=ScrollView(this).apply{addView(box)}
+        val dialog=AlertDialog.Builder(this).setTitle("Etiquetas QR · hoja carta")
+            .setView(scroll).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Generar PDF",null).create()
+        dialog.setOnShowListener{
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+                try{
+                    pdfProducts=products.filterIndexed{index,_->checkboxes[index].isChecked}
+                    require(pdfProducts.isNotEmpty()){"Seleccione al menos un producto"}
+                    pdfOptions=LabelPdf.Layout(
+                        cols.text.toString().toInt(),rows.text.toString().toInt(),
+                        copies.text.toString().toInt(),
+                        margin.text.toString().replace(",",".").toFloat(),
+                        gap.text.toString().replace(",",".").toFloat(),
+                        photos.isChecked,business.isChecked).validated()
+                    pendingPdf=true
+                    val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply{
+                        addCategory(Intent.CATEGORY_OPENABLE);type="application/pdf"
+                        putExtra(Intent.EXTRA_TITLE,"nexo-etiquetas-carta.pdf")
+                    }
+                    dialog.dismiss()
+                    startActivityForResult(intent,130)
+                }catch(e:Exception){toast(e.message?:"Revise la configuración de etiquetas")}
+            }
+        }
+        dialog.show()
     }
     @Deprecated("Legacy activity-result bridge for the experimental APK")
     override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
@@ -849,7 +888,7 @@ class MainActivity : Activity() {
             if(resultCode==RESULT_OK && data?.data!=null){
                 try{
                     contentResolver.openOutputStream(data.data!!)?.use{stream->
-                        LabelPdf.export(this,store.products(),stream)
+                        LabelPdf.export(this,pdfProducts,stream,pdfOptions,ops.setting("name","La pulpe"))
                     }
                     toast("Etiquetas guardadas en PDF")
                 }catch(e:Exception){toast("Error al exportar etiquetas: "+e.message)}
