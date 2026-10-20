@@ -1,0 +1,260 @@
+package com.nexopos.free
+
+import android.accounts.Account
+import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import com.google.android.gms.auth.GoogleAuthUtil
+import com.google.android.gms.auth.UserRecoverableAuthException
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.io.File
+import java.util.concurrent.Executors
+
+/**
+ * No paid backend or embedded client secret. Google's OAuth authorization runs
+ * on the device; only app-created Drive files are accessible (drive.file).
+ * Local SQLite is the authoritative checkout ledger; Sheets is its human-readable mirror.
+ */
+class GoogleCloud(private val activity: Activity,private val store: Store){
+    companion object{
+        const val DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file"
+        const val CALENDAR_SCOPE="https://www.googleapis.com/auth/calendar.events"
+    }
+    private val prefs=activity.getSharedPreferences("nexo_google",0)
+    private val thread=Executors.newSingleThreadExecutor()
+    private val drive="https://www.googleapis.com/drive/v3/files"
+    private val sheets="https://sheets.googleapis.com/v4/spreadsheets"
+
+    fun pushToSheets(account:GoogleSignInAccount,done:(String)->Unit){
+        thread.execute {
+            try{
+                val email=account.email ?: error("La cuenta no tiene correo")
+                val owner=prefs.getString("owner_email",null)
+                require(owner==null || owner==email) {
+                    "Esta instalación pertenece a otra cuenta Google. No se puede mezclar información."
+                }
+                val token=GoogleAuthUtil.getToken(activity,Account(email,"com.google"),"oauth2:$DRIVE_SCOPE")
+                val root=folder(token,"NEXO POS",null)
+                val imageRoot=folder(token,"Imágenes",root)
+                val spreadsheet=sheet(token,root)
+                val original=store.sheets()
+                val photos=mutableMapOf<String,String>()
+                var photoErrors=0
+                for(p in store.products()){
+                    if(p.photo.isBlank())continue
+                    if(p.photo.startsWith("drive:")){photos[p.id]=p.photo;continue}
+                    val key="photo_"+email+"_"+p.id+"_"+p.photo.hashCode()+"_"+p.category.hashCode()
+                    val known=prefs.getString(key,null)
+                    if(known!=null){
+                        photos[p.id]="drive:"+known
+                        continue
+                    }
+                    try{
+                        val category=folder(token,p.category.ifBlank{"Sin categoría"}.take(65),imageRoot)
+                        val photoId=uploadPhoto(token,p,category)
+                        prefs.edit().putString(key,photoId).apply()
+                        photos[p.id]="drive:"+photoId
+                    }catch(_:Exception){photoErrors++}
+                }
+                if(photoErrors>0) error("Hay "+photoErrors+" fotografías pendientes. No se creó una copia incompleta.")
+                val data=JSONArray()
+                val backupTables=JSONObject()
+                for((tab,rows) in original){
+                    val values=JSONArray()
+                    rows.forEachIndexed { index,row->
+                        val dataRow=JSONArray()
+                        row.forEachIndexed{col,value->
+                            val mapped=if(tab=="Productos"&&index>0&&col==7)photos[row[0]]?:value else value
+                            dataRow.put(mapped)
+                        }
+                        values.put(dataRow)
+                    }
+                    backupTables.put(tab,values)
+                    data.put(JSONObject().put("range",tab+"!A1").put("values",values))
+                }
+                val backup=JSONObject().put("version",1).put("owner",email)
+                    .put("tables",backupTables).put("createdAt",System.currentTimeMillis())
+                val backupDate=SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(Date())
+                uploadBytes(token,JSONObject().put("name","nexo-backup-"+backupDate+".json")
+                    .put("mimeType","application/json").put("parents",JSONArray().put(root)),
+                    "application/json",backup.toString().toByteArray(Charsets.UTF_8))
+                request(token,"POST",sheets+"/"+spreadsheet+"/values:batchUpdate",
+                    JSONObject().put("valueInputOption","RAW").put("data",data).toString())
+                prefs.edit().putString("owner_email",email).putString("sheet_"+email,spreadsheet).apply()
+                done("Guardado en Google Sheets y copia recuperable en Drive. "+
+                    original.size+" tablas; imágenes organizadas por categoría.")
+            }catch(e:UserRecoverableAuthException){
+                activity.runOnUiThread{activity.startActivityForResult(e.intent,151)}
+                done("Google requiere autorización adicional. Concédala e intente sincronizar otra vez.")
+            }catch(e:Exception){
+                done("No se pudo sincronizar. Los datos locales siguen intactos. "+(e.message?:""))
+            }
+        }
+    }
+    /**
+     * Recover the latest complete Drive JSON snapshot after user confirmation.
+     * The SQLite transaction is only committed after all schema checks pass.
+     */
+    fun restoreFromDrive(account:GoogleSignInAccount,done:(Boolean,String)->Unit){
+        thread.execute{
+            try{
+                val email=account.email?:error("Sin correo Google")
+                val owner=prefs.getString("owner_email",null)
+                require(owner==null||owner==email){"Debe utilizar la cuenta Google que guardó los datos"}
+                val token=GoogleAuthUtil.getToken(activity,Account(email,"com.google"),"oauth2:$DRIVE_SCOPE")
+                val root=folder(token,"NEXO POS",null)
+                val where="name contains 'nexo-backup-' and mimeType = 'application/json' and trashed = false and '"+
+                    root+"' in parents"
+                val url=drive+"?q="+enc(where)+"&orderBy="+enc("createdTime desc")+
+                    "&pageSize=1&fields="+enc("files(id,name)")
+                val files=JSONObject(request(token,"GET",url)).optJSONArray("files")
+                require(files!=null&&files.length()>0){"No existe ninguna copia de seguridad NEXO POS en Drive"}
+                val fileId=files.getJSONObject(0).getString("id")
+                val backup=JSONObject(request(token,"GET",drive+"/"+fileId+"?alt=media"))
+                require(backup.getInt("version")==1&&backup.getString("owner")==email){
+                    "La copia pertenece a otra cuenta o tiene un formato incompatible"
+                }
+                val data=backup.getJSONObject("tables")
+                val tableNames=listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos")
+                val restored=linkedMapOf<String,List<List<String>>>()
+                var photoIssues=0
+                for(tab in tableNames){
+                    val list=mutableListOf<List<String>>()
+                    val rows=data.getJSONArray(tab)
+                    for(i in 0 until rows.length()){
+                        val raw=rows.getJSONArray(i)
+                        val cols=(0 until raw.length()).map{raw.optString(it,"")}.toMutableList()
+                        if(tab=="Productos"&&i>0&&cols.size>7&&cols[7].startsWith("drive:")){
+                            val photoId=cols[7].removePrefix("drive:")
+                            try{
+                                val dir=File(activity.filesDir,"nexo-fotos")
+                                dir.mkdirs()
+                                val file=File(dir,cols[0].replace(Regex("[^a-zA-Z0-9_-]"),"")+".jpg")
+                                downloadPhoto(token,photoId,file)
+                                cols[7]=Uri.fromFile(file).toString()
+                            }catch(_:Exception){photoIssues++}
+                        }
+                        list.add(cols)
+                    }
+                    restored[tab]=list
+                }
+                store.restore(restored)
+                prefs.edit().putString("owner_email",email).apply()
+                done(true,"Se recuperaron los registros de Google Drive. "+
+                    if(photoIssues>0)"Fotografías no descargadas: "+photoIssues else "Fotografías restauradas.")
+            }catch(e:UserRecoverableAuthException){
+                activity.runOnUiThread{activity.startActivityForResult(e.intent,151)}
+                done(false,"Google requiere autorización adicional. Autorícela e inténtelo nuevamente.")
+            }catch(e:Exception){
+                done(false,"No se restauraron los datos. "+(e.message?:""))
+            }
+        }
+    }
+    private fun downloadPhoto(token:String,id:String,dest:File){
+        val con=URL(drive+"/"+enc(id)+"?alt=media").openConnection() as HttpURLConnection
+        try{
+            con.setRequestProperty("Authorization","Bearer "+token)
+            con.connectTimeout=14000;con.readTimeout=30000
+            require(con.responseCode==200){"Drive no pudo recuperar la fotografía"}
+            con.inputStream.use{input->dest.outputStream().use{output->input.copyTo(output)}}
+        }finally{con.disconnect()}
+    }
+    private fun enc(raw:String)=URLEncoder.encode(raw,"UTF-8")
+    private fun request(token:String,method:String,url:String,body:String?=null):String{
+        val con=URL(url).openConnection() as HttpURLConnection
+        try{
+            con.requestMethod=method
+            con.setRequestProperty("Authorization","Bearer "+token)
+            con.setRequestProperty("Accept","application/json")
+            con.connectTimeout=14000
+            con.readTimeout=25000
+            if(body!=null){
+                con.doOutput=true
+                con.setRequestProperty("Content-Type","application/json; charset=utf-8")
+                con.outputStream.use{it.write(body.toByteArray(Charsets.UTF_8))}
+            }
+            val code=con.responseCode
+            val result=(if(code in 200..299)con.inputStream else con.errorStream)?.bufferedReader()?.use{it.readText()}?:""
+            if(code !in 200..299)throw IllegalStateException("Google API devolvió "+code+": "+result.take(200))
+            return result
+        }finally{con.disconnect()}
+    }
+    private fun folder(token:String,name:String,parent:String?):String{
+        val where="name = '"+name.replace("'","\\'")+"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"+
+            (if(parent!=null)" and '"+parent+"' in parents" else " and 'root' in parents")
+        val result=JSONObject(request(token,"GET",drive+"?q="+enc(where)+"&fields=files(id,name)&pageSize=100"))
+        val rows=result.optJSONArray("files")
+        if(rows!=null&&rows.length()>0)return rows.getJSONObject(0).getString("id")
+        val meta=JSONObject().put("name",name).put("mimeType","application/vnd.google-apps.folder")
+        if(parent!=null)meta.put("parents",JSONArray().put(parent))
+        return JSONObject(request(token,"POST",drive+"?fields=id",meta.toString())).getString("id")
+    }
+    private fun sheet(token:String,root:String):String{
+        val title="NEXO POS - Libro del negocio"
+        val where="name = '"+title+"' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+        val existing=JSONObject(request(token,"GET",drive+"?q="+enc(where)+"&fields=files(id,name)&pageSize=50"))
+            .optJSONArray("files")
+        if(existing!=null&&existing.length()>0)return existing.getJSONObject(0).getString("id")
+        val tabs=JSONArray()
+        listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos").forEach{
+            tabs.put(JSONObject().put("properties",JSONObject().put("title",it)))
+        }
+        val sheetId=JSONObject(request(token,"POST",sheets,
+            JSONObject().put("properties",JSONObject().put("title",title)).put("sheets",tabs).toString()))
+            .getString("spreadsheetId")
+        // Keep the spreadsheet with its photographs under one Drive folder.
+        try{
+            val meta=JSONObject(request(token,"GET",drive+"/"+sheetId+"?fields=parents"))
+            val parents=meta.optJSONArray("parents")
+            val old=if(parents!=null&&parents.length()>0)parents.getString(0) else null
+            val url=drive+"/"+sheetId+"?addParents="+enc(root)+(if(old!=null)"&removeParents="+enc(old) else "")+"&fields=id"
+            request(token,"PATCH",url,"{}")
+        }catch(_:Exception){/* Spreadsheet stays accessible in My Drive. */}
+        return sheetId
+    }
+    private fun uploadPhoto(token:String,product:Product,parent:String):String{
+        val uri=Uri.parse(product.photo)
+        val bytes=ByteArrayOutputStream()
+        activity.contentResolver.openInputStream(uri)?.use{input->
+            val opts=BitmapFactory.Options().apply{inSampleSize=2}
+            val bitmap=BitmapFactory.decodeStream(input,null,opts) ?: error("Foto inválida")
+            bitmap.compress(Bitmap.CompressFormat.JPEG,78,bytes)
+            bitmap.recycle()
+        }?:error("No se pudo abrir la fotografía")
+        val metadata=JSONObject().put("name",product.id+".jpg").put("parents",JSONArray().put(parent))
+            .put("mimeType","image/jpeg")
+        return uploadBytes(token,metadata,"image/jpeg",bytes.toByteArray())
+    }
+    private fun uploadBytes(token:String,metadata:JSONObject,mime:String,bytes:ByteArray):String{
+        val boundary="NexoBoundaryCloudUpload"
+        val data=ByteArrayOutputStream()
+        data.write(("--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+
+            metadata.toString()+"\r\n--"+boundary+"\r\nContent-Type: "+mime+"\r\n\r\n").toByteArray())
+        data.write(bytes)
+        data.write(("\r\n--"+boundary+"--").toByteArray())
+        val con=URL("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id")
+            .openConnection() as HttpURLConnection
+        try{
+            con.requestMethod="POST"
+            con.setRequestProperty("Authorization","Bearer "+token)
+            con.setRequestProperty("Content-Type","multipart/related; boundary="+boundary)
+            con.connectTimeout=18000;con.readTimeout=30000
+            con.doOutput=true
+            con.outputStream.use{it.write(data.toByteArray())}
+            val status=con.responseCode
+            val result=(if(status in 200..299)con.inputStream else con.errorStream)?.bufferedReader()?.use{it.readText()}?:""
+            if(status !in 200..299)error("Error de Google Drive: "+status+" "+result.take(120))
+            return JSONObject(result).getString("id")
+        }finally{con.disconnect()}
+    }
+}

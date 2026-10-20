@@ -1,0 +1,63 @@
+name: Android APK — NEXO POS gratuito
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/android-google-free-mvp
+      - main
+    paths:
+      - "android/**"
+      - ".github/workflows/android-apk.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-apk.yml"
+
+jobs:
+  apk-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      # ubuntu-latest already contains the Android SDK. The legacy setup action
+      # currently tries to install the removed SDK package "tools".
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Instalar SDK Android
+        run: |
+          SDK_TOOL="$(find /usr/local/lib/android/sdk/cmdline-tools -type f -name sdkmanager | head -n 1)"
+          test -x "$SDK_TOOL" || { echo "Android sdkmanager no encontrado"; exit 1; }
+          yes | "$SDK_TOOL" --licenses >/dev/null || true
+          "$SDK_TOOL" "platforms;android-35" "build-tools;35.0.0"
+      - name: Restaurar firma de pruebas opcional
+        env:
+          KEYSTORE_BASE64: ${{ secrets.NEXO_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+          fi
+      - name: Compilar APK de pruebas
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Huella de firma del APK para Google OAuth
+        run: |
+          APKSIGNER="$(find /usr/local/lib/android/sdk/build-tools -name apksigner -type f | sort -V | tail -n 1)"
+          test -x "$APKSIGNER" || { echo "No se encontró apksigner"; exit 1; }
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+      - name: Publicar APK de pruebas
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexo-pos-gratis-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
