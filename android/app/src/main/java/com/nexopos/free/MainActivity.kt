@@ -418,6 +418,243 @@ class MainActivity : Activity() {
                 catch(e:Exception){toast(e.message?:"Error de guardado")}
             }.show()
     }
+
+    private fun renderPurchase(){
+        body.addView(title("Nueva compra",24f))
+        body.addView(info("Seleccione proveedor y agregue mercancía. El inventario se actualizará al recibirla."))
+        val suppliers=store.parties("proveedor")
+        body.addView(info("Proveedor"))
+        val supplierSelect=Spinner(this)
+        supplierSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,
+            listOf("Sin proveedor")+suppliers.map{it.name})
+        supplierSelect.setSelection((suppliers.indexOfFirst{it.id==purchaseSupplierId}+1).coerceAtLeast(0))
+        supplierSelect.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){
+                purchaseSupplierId=if(position==0)null else suppliers[position-1].id
+            }
+        }
+        body.addView(supplierSelect,LinearLayout.LayoutParams(-1,dp(48)))
+        addButton(body,"+ Registrar proveedor sin salir de la compra"){partyDialog("proveedor")}
+        if(purchaseSupplierId!=null){
+            val associated=ops.supplierProducts(purchaseSupplierId!!)
+            body.addView(info("Productos comprados anteriormente a este proveedor: "+associated.size))
+        }
+        body.addView(title("Artículos de la compra",18f))
+        purchaseCart.toMap().forEach{(key,item)->
+            val box=card()
+            box.addView(title(item.name,16f))
+            box.addView(info(item.qty.toString()+" unidades × "+money(item.cost)+" = "+money(item.cost*item.qty)))
+            val actions=row()
+            actions.addView(btn("−"){
+                if(item.qty<=1)purchaseCart.remove(key)
+                else purchaseCart[key]=item.copy(qty=item.qty-1)
+                render()
+            })
+            actions.addView(btn("+"){
+                purchaseCart[key]=item.copy(qty=item.qty+1);render()
+            })
+            actions.addView(btn("Cantidad/costo"){editPurchaseLine(key,item)})
+            actions.addView(btn("Quitar"){purchaseCart.remove(key);render()})
+            box.addView(actions)
+            body.addView(box,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(7)})
+        }
+        val sum=purchaseCart.values.sumOf{it.cost*it.qty}
+        body.addView(info("Subtotal mercancía: "+money(sum)))
+        addButton(body,"+ Nuevo producto en esta compra"){newPurchaseItem()}
+        body.addView(title("Agregar del inventario",18f))
+        val search=field("Buscar producto registrado")
+        body.addView(search)
+        val list=column()
+        body.addView(list)
+        fun filter(query:String){
+            list.removeAllViews()
+            store.products().filter{it.name.contains(query,true)||it.barcode.contains(query,true)}
+                .take(if(query.isEmpty())12 else 30).forEach{product->
+                    val line=card()
+                    line.addView(title(product.name,16f))
+                    line.addView(info("Existencia: "+product.qty+" · costo: "+money(product.cost)))
+                    line.addView(btn("+ Añadir a la compra"){
+                        val old=purchaseCart[product.id]
+                        purchaseCart[product.id]=if(old!=null)old.copy(qty=old.qty+1)
+                            else PurchaseItem(product.id,product.name,product.category,1,product.cost,product.price)
+                        render()
+                    })
+                    list.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(6)})
+                }
+        }
+        filter("")
+        search.addTextChangedListener(object:TextWatcher{
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){filter(s.toString())}
+            override fun afterTextChanged(s:Editable?){}
+        })
+        body.addView(title("Datos de la compra",18f))
+        val invoice=field("Número de factura o referencia",purchaseInvoice)
+        invoice.addTextChangedListener(simpleWatcher{purchaseInvoice=it})
+        body.addView(invoice)
+        val freight=field("Flete C$",purchaseFreight,true)
+        freight.addTextChangedListener(simpleWatcher{purchaseFreight=it})
+        body.addView(freight)
+        val methods=listOf("Contado","Crédito")
+        val methodSelect=Spinner(this)
+        methodSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,methods)
+        methodSelect.setSelection(methods.indexOf(purchaseMethod))
+        methodSelect.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){
+                purchaseMethod=methods[position]
+            }
+        }
+        body.addView(methodSelect,LinearLayout.LayoutParams(-1,dp(45)))
+        val freightValue=try{cents(purchaseFreight)}catch(_:Exception){0L}
+        addButton(body,"Recibir mercancía · "+money(sum+freightValue)){
+            try{
+                val fee=cents(purchaseFreight)
+                require(purchaseCart.isNotEmpty()){"Agregue productos"}
+                require(purchaseMethod!="Crédito"||purchaseSupplierId!=null){"Seleccione proveedor para comprar a crédito"}
+                AlertDialog.Builder(this).setTitle("Confirmar recepción")
+                    .setMessage("Se aumentará el inventario de "+purchaseCart.size+
+                        " productos y se registrará la compra por "+money(sum+fee)+".")
+                    .setNegativeButton("Cancelar",null)
+                    .setPositiveButton("Recibir"){_,_->
+                        try{
+                            val result=ops.purchase(purchaseSupplierId,purchaseCart.values.toList(),fee,
+                                purchaseInvoice,purchaseMethod)
+                            purchaseCart.clear();purchaseInvoice="";purchaseFreight="0"
+                            toast("Compra registrada: "+money(result.total));render()
+                        }catch(e:Exception){toast(e.message?:"No se pudo registrar la compra")}
+                    }.show()
+            }catch(e:Exception){toast(e.message?:"Datos incompletos")}
+        }
+        body.addView(title("Compras recientes",18f))
+        ops.purchases().take(12).forEach{p->
+            body.addView(info(p.date+" · "+p.supplier+" · "+money(p.total)+" · "+p.method))
+        }
+    }
+
+    private fun simpleWatcher(action:(String)->Unit):TextWatcher=object:TextWatcher{
+        override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+        override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){action(s.toString())}
+        override fun afterTextChanged(s:Editable?){}
+    }
+
+    private fun newPurchaseItem(){
+        val box=column().apply{setPadding(dp(10),dp(7),dp(10),0)}
+        val name=field("Nombre del producto")
+        val category=field("Categoría")
+        val cost=field("Costo por unidad",numeric=true)
+        val price=field("Precio de venta",numeric=true)
+        val qty=field("Cantidad recibida","1",true)
+        listOf(name,category,cost,price,qty).forEach{box.addView(it)}
+        AlertDialog.Builder(this).setTitle("Producto nuevo en la compra").setView(box)
+            .setNegativeButton("Cancelar",null).setPositiveButton("Añadir"){_,_->
+                try{
+                    val item=PurchaseItem(null,name.text.toString().trim(),category.text.toString().trim(),
+                        qty.text.toString().toInt(),cents(cost.text.toString()),cents(price.text.toString()))
+                    require(item.name.length>=2&&item.qty>0&&item.cost>=0&&item.salePrice>=0){"Revise los datos"}
+                    purchaseCart[UUID.randomUUID().toString()]=item
+                    render()
+                }catch(e:Exception){toast(e.message?:"Producto inválido")}
+            }.show()
+    }
+
+    private fun editPurchaseLine(key:String,item:PurchaseItem){
+        val box=column().apply{setPadding(dp(12),dp(8),dp(12),0)}
+        val qty=field("Cantidad",item.qty.toString(),true)
+        val cost=field("Costo unitario",BigDecimal.valueOf(item.cost,2).toPlainString(),true)
+        val price=field("Precio venta",BigDecimal.valueOf(item.salePrice,2).toPlainString(),true)
+        listOf(qty,cost,price).forEach{box.addView(it)}
+        AlertDialog.Builder(this).setTitle(item.name).setView(box)
+            .setNegativeButton("Cancelar",null).setPositiveButton("Aplicar"){_,_->
+                try{
+                    val q=qty.text.toString().toInt()
+                    val c=cents(cost.text.toString())
+                    val p=cents(price.text.toString())
+                    require(q in 1..99999&&c>=0&&p>=0){"Cantidad o precios inválidos"}
+                    purchaseCart[key]=item.copy(qty=q,cost=c,salePrice=p)
+                    render()
+                }catch(e:Exception){toast(e.message?:"Valores incorrectos")}
+            }.show()
+    }
+
+    private fun renderCash(){
+        body.addView(title("Caja y arqueo",24f))
+        val open=ops.openCash()
+        if(open==null){
+            body.addView(info("No hay un turno abierto. El fondo inicial no se registra como venta."))
+            val initial=field("Efectivo inicial C$","0",true)
+            body.addView(initial)
+            addButton(body,"Abrir caja"){
+                try{ops.startCash(cents(initial.text.toString()));render();toast("Caja abierta")}
+                catch(e:Exception){toast(e.message?:"Fondo inválido")}
+            }
+            return
+        }
+        body.addView(stat("Efectivo esperado en el cajón",money(open.expected)))
+        body.addView(info("Turno abierto: "+open.opened+" · fondo "+money(open.opening)))
+        val amount=field("Monto de entrada o retiro C$",numeric=true)
+        val reason=field("Motivo (obligatorio)")
+        body.addView(amount);body.addView(reason)
+        val commands=row()
+        listOf("Entrada" to false,"Retiro" to true).forEach{(name,withdrawal)->
+            commands.addView(btn(name){
+                try{ops.cashMove(cents(amount.text.toString()),reason.text.toString(),withdrawal)
+                    render();toast("Movimiento registrado")}
+                catch(e:Exception){toast(e.message?:"Error del movimiento")}
+            },LinearLayout.LayoutParams(0,dp(48),1f).apply{rightMargin=dp(7)})
+        }
+        body.addView(commands)
+        body.addView(title("Movimientos del turno",18f))
+        val movements=ops.cashMoves()
+        if(movements.isEmpty())body.addView(info("Sin movimientos registrados."))
+        movements.forEach{move->
+            body.addView(info(move.date+" · "+move.kind+" · "+money(move.amount)+" · "+move.note))
+        }
+        val count=field("Efectivo contado al cierre C$",numeric=true)
+        body.addView(count)
+        addButton(body,"Cerrar caja y calcular diferencia"){
+            try{
+                val counted=cents(count.text.toString())
+                AlertDialog.Builder(this).setTitle("Confirmar cierre de caja")
+                    .setMessage("Contado: "+money(counted)+"\nEsperado: "+money(open.expected)+
+                        "\nDiferencia: "+money(counted-open.expected)+
+                        "\nEl turno se cerrará y quedará registrado.")
+                    .setNegativeButton("Cancelar",null).setPositiveButton("Cerrar caja"){_,_->
+                        try{ops.closeCash(counted);render();toast("Caja cerrada")}
+                        catch(e:Exception){toast(e.message?:"No se pudo cerrar")}
+                    }.show()
+            }catch(e:Exception){toast("Ingrese el arqueo contado")}
+        }
+    }
+
+    private fun renderSettings(){
+        body.addView(title("Configuración del negocio",24f))
+        val props=listOf(
+            Triple("name","Nombre comercial","La pulpe"),
+            Triple("address","Dirección",""),
+            Triple("phone","Teléfono",""),
+            Triple("tax_id","Identificación fiscal (opcional)",""),
+            Triple("currency","Moneda","NIO"),
+            Triple("credit_days","Días habituales de crédito","30"))
+        val inputs=linkedMapOf<String,EditText>()
+        props.forEach{(key,hint,default)->
+            body.addView(info(hint))
+            val box=field(hint,ops.setting(key,default),key=="credit_days")
+            inputs[key]=box
+            body.addView(box)
+        }
+        addButton(body,"Guardar configuración"){
+            try{
+                val data=inputs.mapValues{it.value.text.toString()}
+                require(data.getValue("name").trim().isNotEmpty()){"Escriba el nombre comercial"}
+                require(data.getValue("credit_days").toIntOrNull() in 0..365){"Días de crédito inválidos"}
+                ops.saveSettings(data);render();toast("Configuración guardada localmente")
+            }catch(e:Exception){toast(e.message?:"Datos inválidos")}
+        }
+        body.addView(info("Los datos del negocio se incluirán en el respaldo de Google Drive cuando esté conectado."))
+        body.addView(info("Moneda para esta edición: Córdoba (C$). Antes de habilitar otra moneda deben adaptarse formatos y cálculos."))
+    }
     private fun renderHistory(){
         body.addView(title("Ventas registradas"))
         val sales=store.sales()
