@@ -7,6 +7,12 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import java.security.MessageDigest
 import android.os.Bundle
 import android.provider.CalendarContract
 import android.text.Editable
@@ -85,7 +91,7 @@ class MainActivity : Activity() {
     private fun column():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
     private fun row():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
     private fun btn(text:String,action:()->Unit):Button=Button(this).apply{
-        this.text=text;textSize=13f;setAllCaps(false);setTextColor(ink)
+        this.text=text;textSize=13f;setAllCaps(false);setTextColor(Color.BLACK)
         background=GradientDrawable().apply{setColor(terracotta);cornerRadius=dp(14).toFloat()}
         setPadding(dp(10),dp(8),dp(10),dp(8))
         setOnClickListener{action()}
@@ -152,7 +158,7 @@ class MainActivity : Activity() {
             val action=btn(item){tab=item;render()}
             action.textSize=11f
             if(item==selected)action.setTextColor(Color.BLACK)
-            else action.background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat()}
+            else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat()} }
             nav.addView(action,LinearLayout.LayoutParams(0,dp(49),1f).apply{rightMargin=dp(3)})
         }
         root.addView(nav)
@@ -664,26 +670,61 @@ class MainActivity : Activity() {
             body.addView(info(s.date+" · "+s.customer+" · "+s.id.take(8)))
         }
     }
+    private fun installedSha1():String{
+        return try{
+            val pm=packageManager
+            @Suppress("DEPRECATION")
+            val p=if(Build.VERSION.SDK_INT>=28)
+                pm.getPackageInfo(packageName,PackageManager.GET_SIGNING_CERTIFICATES)
+            else pm.getPackageInfo(packageName,PackageManager.GET_SIGNATURES)
+            @Suppress("DEPRECATION")
+            val signature=if(Build.VERSION.SDK_INT>=28)p.signingInfo?.apkContentsSigners?.firstOrNull()
+                else p.signatures?.firstOrNull()
+            val bytes=signature?.toByteArray()?:return "No se pudo leer la firma"
+            MessageDigest.getInstance("SHA-1").digest(bytes).joinToString(":"){b->
+                "%02X".format(b.toInt() and 0xff)
+            }
+        }catch(_:Exception){"Firma no disponible"}
+    }
+
     private fun renderCloud(){
         body.addView(title("Tu cuenta de Google"))
         val account=GoogleSignIn.getLastSignedInAccount(this)
         body.addView(info(account?.email ?: "No conectada. Puede usar esta versión local para probar el punto de venta."))
-        addButton(body,if(account==null)"Entrar con Google" else "Cambiar cuenta"){
+        val sha=installedSha1()
+        body.addView(info("Identificador de la aplicación: "+packageName))
+        body.addView(info("SHA-1 de este APK: "+sha))
+        addButton(body,"Copiar datos para Google Cloud"){
+            val data="Paquete: "+packageName+"\nSHA-1: "+sha
+            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("NEXO POS OAuth Android",data))
+            toast("Datos copiados para Google Cloud")
+        }
+        addButton(body,if(account==null)"Entrar con Google" else "Cambiar cuenta Google"){
             val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestEmail()
-                .requestScopes(Scope(GoogleCloud.DRIVE_SCOPE))
-                .build()
+                .requestEmail().build()
             GoogleSignIn.getClient(this,options).signInIntent.also{startActivityForResult(it,120)}
         }
+        body.addView(info("Si aparece el error 10, configure Google Cloud → Clientes OAuth → Android con este paquete y el SHA-1 exacto mostrado arriba."))
         addButton(body,"Guardar registros en Google Sheets"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
-            toast("Sincronizando. No cierre la aplicación.")
-            google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
+            val scope=Scope(GoogleCloud.DRIVE_SCOPE)
+            if(!GoogleSignIn.hasPermissions(signed,scope)){
+                GoogleSignIn.requestPermissions(this,121,signed,scope)
+            }else{
+                toast("Sincronizando con Google…")
+                google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
+            }
         }
         addButton(body,"Recuperar copia de seguridad de Drive"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
+            val scope=Scope(GoogleCloud.DRIVE_SCOPE)
+            if(!GoogleSignIn.hasPermissions(signed,scope)){
+                GoogleSignIn.requestPermissions(this,122,signed,scope)
+                return@addButton
+            }
             AlertDialog.Builder(this).setTitle("Restaurar datos desde Google")
                 .setMessage("Se sustituirán TODOS los productos, ventas, clientes, fiados y abonos del teléfono por la última copia completa de NEXO POS en Drive. Este cambio no se puede deshacer. ¿Desea continuar?")
                 .setNegativeButton("Cancelar",null)
@@ -740,8 +781,42 @@ class MainActivity : Activity() {
         if(requestCode==120){
             try{
                 val account=GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
-                toast("Google conectado: "+(account.email?:"Cuenta autorizada"));render()
-            }catch(e:Exception){toast("No se inició sesión. Verifique el cliente OAuth Android y su certificado SHA-1.")}
+                val email=account.email?:error("Google no devolvió el correo")
+                val prefs=getSharedPreferences("nexo_google",Context.MODE_PRIVATE)
+                val prior=prefs.getString("owner_email",null)
+                if(prior!=null&&prior!=email){
+                    AlertDialog.Builder(this).setTitle("Cuenta distinta")
+                        .setMessage("Este negocio pertenece a "+prior+". Para evitar mezclar los datos, utilice esa misma cuenta.")
+                        .setPositiveButton("Entendido",null).show()
+                }else{
+                    prefs.edit().putString("owner_email",email).apply()
+                    toast("Google conectado: "+email)
+                }
+                render()
+            }catch(e:ApiException){
+                val code=e.statusCode
+                val note=if(code==10)"Google rechazó esta aplicación (DEVELOPER_ERROR). Registre un cliente OAuth de tipo Android con el paquete "+packageName+" y SHA-1 "+installedSha1()+"."
+                    else "Código "+code+". Verifique internet, Google Play Services y la autorización de la cuenta."
+                AlertDialog.Builder(this).setTitle("No se pudo iniciar sesión con Google")
+                    .setMessage(note).setPositiveButton("Entendido",null).show()
+            }catch(e:Exception){
+                AlertDialog.Builder(this).setTitle("Error de Google").setMessage(e.message?:"No se pudo iniciar sesión")
+                    .setPositiveButton("Aceptar",null).show()
+            }
+            return
+        }
+        if(requestCode==121){
+            if(resultCode==RESULT_OK){
+                GoogleSignIn.getLastSignedInAccount(this)?.let{signed->
+                    toast("Permiso concedido; sincronizando…")
+                    google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
+                }
+            }else toast("No se autorizó el acceso a Drive")
+            return
+        }
+        if(requestCode==122){
+            if(resultCode==RESULT_OK)toast("Permiso concedido. Pulse Recuperar copia nuevamente para confirmar.")
+            else toast("No se autorizó el acceso a Drive")
             return
         }
         val scan=IntentIntegrator.parseActivityResult(requestCode,resultCode,data)
