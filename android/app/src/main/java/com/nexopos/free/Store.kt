@@ -37,6 +37,7 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
         db.execSQL("CREATE TABLE IF NOT EXISTS cash_sessions(id TEXT PRIMARY KEY,opened TEXT NOT NULL,opening INTEGER NOT NULL,closed TEXT,counted INTEGER,expected INTEGER)")
         db.execSQL("CREATE TABLE IF NOT EXISTS cash_movements(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,date TEXT NOT NULL,kind TEXT NOT NULL,amount INTEGER NOT NULL,note TEXT NOT NULL,reference TEXT NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS business_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS supplier_payments(id TEXT PRIMARY KEY,date TEXT NOT NULL,party_id TEXT NOT NULL,amount INTEGER NOT NULL)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements ON cash_movements(session_id)")
     }
@@ -144,7 +145,8 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
             "ProveedorProductos" to "SELECT product_id,supplier_id,last_cost,updated FROM product_suppliers ORDER BY updated",
             "CajaTurnos" to "SELECT id,opened,opening,closed,counted,expected FROM cash_sessions ORDER BY opened",
             "CajaMovimientos" to "SELECT id,session_id,date,kind,amount,note,reference FROM cash_movements ORDER BY date",
-            "Configuracion" to "SELECT key,value FROM business_settings ORDER BY key")
+            "Configuracion" to "SELECT key,value FROM business_settings ORDER BY key",
+            "AbonosProveedores" to "SELECT id,date,party_id,amount FROM supplier_payments ORDER BY date")
         val result=linkedMapOf<String,List<List<String>>>()
         for((name,sql) in specs){
             val values=mutableListOf<List<String>>()
@@ -174,7 +176,8 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
             "ProveedorProductos" to listOf("product_id","supplier_id","last_cost","updated"),
             "CajaTurnos" to listOf("id","opened","opening","closed","counted","expected"),
             "CajaMovimientos" to listOf("id","session_id","date","kind","amount","note","reference"),
-            "Configuracion" to listOf("key","value"))
+            "Configuracion" to listOf("key","value"),
+            "AbonosProveedores" to listOf("id","date","party_id","amount"))
         for((name,columns) in headers){
             require(tables[name]?.firstOrNull()==columns){"Archivo incompatible o dañado: "+name}
             for(row in tables[name]!!.drop(1))require(row.size==columns.size){"Datos incompletos en "+name}
@@ -182,7 +185,7 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
         val db=writableDatabase
         db.beginTransaction()
         try{
-            listOf("cash_movements","cash_sessions","purchase_lines","product_suppliers",
+            listOf("supplier_payments","cash_movements","cash_sessions","purchase_lines","product_suppliers",
                 "purchases","business_settings","payments","lines","sales","parties","products").forEach{
                 db.execSQL("DELETE FROM "+it)
             }
@@ -212,7 +215,8 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
                 "ProveedorProductos" to Pair("product_suppliers",listOf("product_id","supplier_id","last_cost","updated")),
                 "CajaTurnos" to Pair("cash_sessions",listOf("id","opened","opening","closed","counted","expected")),
                 "CajaMovimientos" to Pair("cash_movements",listOf("id","session_id","date","kind","amount","note","reference")),
-                "Configuracion" to Pair("business_settings",listOf("key","value"))
+                "Configuracion" to Pair("business_settings",listOf("key","value")),
+                "AbonosProveedores" to Pair("supplier_payments",listOf("id","date","party_id","amount"))
             )
             for((name,spec) in extras){
                 for(values in tables.getValue(name).drop(1)){
