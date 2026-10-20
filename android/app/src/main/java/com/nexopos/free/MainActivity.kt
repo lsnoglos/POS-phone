@@ -35,7 +35,11 @@ class MainActivity : Activity() {
     private lateinit var store: Store
     private lateinit var root: LinearLayout
     private lateinit var body: LinearLayout
-    private var tab = "Venta"
+    private var tab = "Inicio"
+    private lateinit var ops:BusinessOps
+    private val purchaseCart=linkedMapOf<String,PurchaseItem>()
+    private var purchaseSupplierId:String?=null
+    private var purchaseMethod="Contado"
     private val cart = linkedMapOf<String,Int>()
     private var chosenCustomer: String? = null
     private var chosenMethod = "Efectivo"
@@ -43,17 +47,19 @@ class MainActivity : Activity() {
     private var photoChanged: ((String)->Unit)? = null
     private var pendingPdf = false
     private var google: GoogleCloud? = null
-    private val cream = Color.rgb(246,244,238)
-    private val terracotta = Color.rgb(223,151,93)
-    private val ink = Color.rgb(40,38,35)
-    private val muted = Color.rgb(104,103,99)
-    private val tabs = listOf("Venta","Inventario","Clientes","Proveedores","Historial","Google")
+    private val cream = Color.rgb(16,19,16)
+    private val surface = Color.rgb(29,33,28)
+    private val terracotta = Color.rgb(244,183,131)
+    private val ink = Color.rgb(248,244,235)
+    private val muted = Color.rgb(183,172,159)
+    private val tabs = listOf("Inicio","Venta","Inventario","Finanzas","Más")
 
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor=ink
+        window.statusBarColor=cream
         window.navigationBarColor=Color.BLACK
         store=Store(this)
+        ops=BusinessOps(store)
         google=GoogleCloud(this,store)
         root=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL;setBackgroundColor(cream)
@@ -93,36 +99,127 @@ class MainActivity : Activity() {
         if(numeric)inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         setPadding(dp(12),dp(5),dp(12),dp(5))
         background=GradientDrawable().apply{
-            setColor(Color.WHITE);cornerRadius=dp(12).toFloat();setStroke(dp(1),0xffdedbd1.toInt())
+            setColor(surface);cornerRadius=dp(12).toFloat();setStroke(dp(1),0xff5b5a51.toInt())
         }
         layoutParams=LinearLayout.LayoutParams(-1,dp(53)).apply{bottomMargin=dp(9)}
     }
+
+    private fun card():LinearLayout=column().apply{
+        setPadding(dp(13),dp(9),dp(13),dp(9))
+        background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(17).toFloat()}
+    }
+    private fun navigate(text:String,detail:String,dest:String){
+        val item=card()
+        item.addView(title(text,17f));item.addView(info(detail))
+        item.setOnClickListener{tab=dest;render()}
+        body.addView(item,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})
+    }
+    private fun stat(label:String,value:String):LinearLayout=card().apply{
+        addView(info(label));addView(title(value,20f))
+    }
     private fun render(){
         root.removeAllViews()
-        root.addView(title("NEXO POS  ·  La pulpe",24f))
-        root.addView(info("Pruebas Android · datos locales · sin servidor de pago"))
-        val horizontal=HorizontalScrollView(this)
-        horizontal.isHorizontalScrollBarEnabled=false
-        val nav=row()
-        tabs.forEach{item->
-            val button=btn(item){tab=item;render()}
-            if(item==tab)button.setTextColor(Color.WHITE)
-            else button.background=GradientDrawable().apply{setColor(0xffe8e5de.toInt());cornerRadius=dp(13).toFloat()}
-            nav.addView(button,LinearLayout.LayoutParams(-2,dp(44)).apply{rightMargin=dp(5)})
-        }
-        horizontal.addView(nav);root.addView(horizontal)
+        val currentName=ops.setting("name","La pulpe")
+        val header=row()
+        header.addView(title("NEXO POS · "+currentName,20f),LinearLayout.LayoutParams(0,-2,1f))
+        header.addView(btn("⚙"){tab="Configuración";render()},LinearLayout.LayoutParams(dp(48),dp(42)))
+        root.addView(header)
         val scroll=ScrollView(this)
-        body=column().apply{setPadding(0,dp(8),0,dp(24))}
+        body=column().apply{setPadding(0,dp(4),0,dp(18))}
         scroll.addView(body)
         root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         when(tab){
+            "Inicio"->renderDashboard()
             "Venta"->renderSale()
             "Inventario"->renderInventory()
+            "Finanzas"->renderFinance()
+            "Más"->renderMore()
+            "Compra"->renderPurchase()
+            "Caja"->renderCash()
             "Clientes"->renderParties("cliente")
             "Proveedores"->renderParties("proveedor")
             "Historial"->renderHistory()
             "Google"->renderCloud()
+            "Configuración"->renderSettings()
         }
+        val nav=row()
+        val selected=when(tab){
+            "Compra","Caja"->"Finanzas"
+            "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
+            else->tab
+        }
+        tabs.forEach{item->
+            val action=btn(item){tab=item;render()}
+            action.textSize=11f
+            if(item==selected)action.setTextColor(Color.BLACK)
+            else action.background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat()}
+            nav.addView(action,LinearLayout.LayoutParams(0,dp(49),1f).apply{rightMargin=dp(3)})
+        }
+        root.addView(nav)
+    }
+    private fun renderDashboard(){
+        val summary=ops.summary()
+        body.addView(title("Panel de tu negocio",25f))
+        val hero=card().apply{
+            background=GradientDrawable().apply{setColor(0xff513822.toInt());cornerRadius=dp(17).toFloat()}
+            addView(info("Ventas de hoy"));addView(title(money(summary.today),30f))
+            addView(info("Ayer "+money(summary.yesterday)+" · Semana "+money(summary.week)))
+        }
+        body.addView(hero)
+        body.addView(title("Accesos rápidos",19f))
+        val actions=listOf(
+            Triple("Nueva venta","Cobrar en el mostrador","Venta"),
+            Triple("Nueva compra","Entrar mercancía","Compra"),
+            Triple("Inventario","Productos, precios, QR","Inventario"),
+            Triple("Caja y arqueo","Turnos y efectivo","Caja"))
+        actions.chunked(2).forEach{pair->
+            val line=row()
+            pair.forEach{(label,detail,dest)->
+                val item=card()
+                item.addView(title(label,16f));item.addView(info(detail))
+                item.setOnClickListener{tab=dest;render()}
+                line.addView(item,LinearLayout.LayoutParams(0,dp(114),1f).apply{rightMargin=dp(7)})
+            }
+            body.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(7)})
+        }
+        body.addView(title("Resumen",19f))
+        listOf(
+            "Ventas del mes" to money(summary.month),
+            "Ganancia bruta estimada" to money(summary.profit),
+            "Por cobrar" to money(summary.receivable),
+            "Por pagar" to money(summary.payable),
+            "Compras del mes" to money(summary.purchases),
+            "Inventario al costo" to money(summary.stockValue)
+        ).chunked(2).forEach{pair->
+            val line=row()
+            pair.forEach{(label,value)->
+                line.addView(stat(label,value),LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(7)})
+            }
+            body.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(7)})
+        }
+        body.addView(info("Alertas: "+summary.lowStock+" productos con 3 unidades o menos."))
+        body.addView(info(if(summary.openShift)"Caja abierta · esperado "+money(summary.cashExpected?:0L)
+            else "Caja cerrada · abre un turno para registrar efectivo."))
+        body.addView(info("Las cifras se calculan con los registros locales. Ganancia bruta no es utilidad neta."))
+    }
+    private fun renderFinance(){
+        body.addView(title("Finanzas",25f))
+        navigate("Caja y arqueo","Abrir y cerrar turnos, entradas y retiros","Caja")
+        navigate("Compras","Recepción de mercancía y proveedores","Compra")
+        navigate("Cuentas por cobrar","Fiados y abonos de clientes","Clientes")
+        navigate("Proveedores","Cuentas por pagar","Proveedores")
+        navigate("Historial de ventas","Registro de transacciones","Historial")
+        body.addView(info("Libro diario, libro mayor y estados financieros completos siguen en desarrollo."))
+    }
+    private fun renderMore(){
+        body.addView(title("Más opciones",25f))
+        listOf(
+            Triple("Clientes y fiados","Saldos, abonos y recordatorios","Clientes"),
+            Triple("Proveedores","Contactos, productos vinculados y deudas","Proveedores"),
+            Triple("Historial","Operaciones registradas","Historial"),
+            Triple("Configuración","Datos y preferencias del negocio","Configuración"),
+            Triple("Cuenta de Google","Sesión, Drive, Sheets y respaldos","Google")
+        ).forEach{navigate(it.first,it.second,it.third)}
     }
     private fun cartAdd(product:Product){
         if(product.qty<=0){toast("Sin existencias: "+product.name);return}
