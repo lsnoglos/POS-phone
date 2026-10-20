@@ -49,10 +49,11 @@ jobs:
           fi
       - name: Compilar APK de pruebas
         run: gradle --no-daemon :app:assembleDebug
-      - name: Huella SHA-1 para OAuth Android
+      - name: Huella de firma del APK para Google OAuth
         run: |
-          keytool -list -v -keystore "$HOME/.android/debug.keystore" \
-            -alias androiddebugkey -storepass android -keypass android | grep -E 'SHA1:|SHA256:'
+          APKSIGNER="$(find /usr/local/lib/android/sdk/build-tools -name apksigner -type f | sort -V | tail -n 1)"
+          test -x "$APKSIGNER" || { echo "No se encontró apksigner"; exit 1; }
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
       - name: Publicar APK de pruebas
         uses: actions/upload-artifact@v4
         with:
