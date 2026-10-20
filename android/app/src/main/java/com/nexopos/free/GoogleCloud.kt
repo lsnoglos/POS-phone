@@ -88,6 +88,12 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                 uploadBytes(token,JSONObject().put("name","nexo-backup-"+backupDate+".json")
                     .put("mimeType","application/json").put("parents",JSONArray().put(root)),
                     "application/json",backup.toString().toByteArray(Charsets.UTF_8))
+                // Old rows must be cleared before a shorter export to prevent ghost records.
+                val ranges=JSONArray()
+                val keys=original.keys
+                for(name in keys)ranges.put(name+"!A1:Z10000")
+                request(token,"POST",sheets+"/"+spreadsheet+"/values:batchClear",
+                    JSONObject().put("ranges",ranges).toString())
                 request(token,"POST",sheets+"/"+spreadsheet+"/values:batchUpdate",
                     JSONObject().put("valueInputOption","RAW").put("data",data).toString())
                 prefs.edit().putString("owner_email",email).putString("sheet_"+email,spreadsheet).apply()
@@ -206,7 +212,11 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
         val where="name = '"+title+"' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
         val existing=JSONObject(request(token,"GET",drive+"?q="+enc(where)+"&fields=files(id,name)&pageSize=50"))
             .optJSONArray("files")
-        if(existing!=null&&existing.length()>0)return existing.getJSONObject(0).getString("id")
+        if(existing!=null&&existing.length()>0){
+            val id=existing.getJSONObject(0).getString("id")
+            ensureTabs(token,id)
+            return id
+        }
         val tabs=JSONArray()
         listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos",
             "Compras","DetalleCompras","ProveedorProductos","CajaTurnos","CajaMovimientos",
@@ -226,6 +236,26 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
         }catch(_:Exception){/* Spreadsheet stays accessible in My Drive. */}
         return sheetId
     }
+    /** Add newly introduced sheets to an existing user spreadsheet. */
+    private fun ensureTabs(token:String,id:String){
+        val wanted=listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos",
+            "Compras","DetalleCompras","ProveedorProductos","CajaTurnos","CajaMovimientos",
+            "Configuracion","AbonosProveedores")
+        val result=JSONObject(request(token,"GET",sheets+"/"+id+
+            "?fields="+enc("sheets(properties(title))")))
+        val existing=mutableSetOf<String>()
+        val tabs=result.optJSONArray("sheets")
+        if(tabs!=null)for(i in 0 until tabs.length())
+            existing.add(tabs.getJSONObject(i).getJSONObject("properties").getString("title"))
+        val requests=JSONArray()
+        wanted.filterNot{it in existing}.forEach{title->
+            requests.put(JSONObject().put("addSheet",JSONObject().put("properties",
+                JSONObject().put("title",title))))
+        }
+        if(requests.length()>0)request(token,"POST",sheets+"/"+id+":batchUpdate",
+            JSONObject().put("requests",requests).toString())
+    }
+
     private fun uploadPhoto(token:String,product:Product,parent:String):String{
         val uri=Uri.parse(product.photo)
         val bytes=ByteArrayOutputStream()
