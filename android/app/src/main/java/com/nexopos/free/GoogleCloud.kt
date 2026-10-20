@@ -28,6 +28,7 @@ import java.util.concurrent.Executors
 class GoogleCloud(private val activity: Activity,private val store: Store){
     companion object{
         const val DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file"
+        const val SHEETS_SCOPE="https://www.googleapis.com/auth/spreadsheets"
         const val CALENDAR_SCOPE="https://www.googleapis.com/auth/calendar.events"
     }
     private val prefs=activity.getSharedPreferences("nexo_google",0)
@@ -43,7 +44,7 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                 require(owner==null || owner==email) {
                     "Esta instalación pertenece a otra cuenta Google. No se puede mezclar información."
                 }
-                val token=GoogleAuthUtil.getToken(activity,Account(email,"com.google"),"oauth2:$DRIVE_SCOPE")
+                val token=GoogleAuthUtil.getToken(activity,Account(email,"com.google"),"oauth2:$DRIVE_SCOPE $SHEETS_SCOPE")
                 val root=folder(token,"NEXO POS",null)
                 val imageRoot=folder(token,"Imágenes",root)
                 val spreadsheet=sheet(token,root)
@@ -193,7 +194,12 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
             }
             val code=con.responseCode
             val result=(if(code in 200..299)con.inputStream else con.errorStream)?.bufferedReader()?.use{it.readText()}?:""
-            if(code !in 200..299)throw IllegalStateException("Google API devolvió "+code+": "+result.take(200))
+            if(code !in 200..299){
+                val parsed=try{JSONObject(result).optJSONObject("error")}catch(_:Exception){null}
+                val reason=parsed?.optString("message")?.take(320)?.ifBlank{null}?:result.take(320)
+                val service=if(url.contains("sheets.googleapis.com"))"Google Sheets" else "Google Drive"
+                throw IllegalStateException("$service HTTP $code: $reason")
+            }
             return result
         }finally{con.disconnect()}
     }
