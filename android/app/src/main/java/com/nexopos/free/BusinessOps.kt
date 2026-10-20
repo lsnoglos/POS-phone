@@ -9,7 +9,7 @@ import java.util.UUID
 private fun stamp():String=SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US).format(Date())
 data class PurchaseItem(val productId:String?,val name:String,val category:String,val qty:Int,val cost:Long,val salePrice:Long)
 data class PurchaseRecord(val id:String,val date:String,val supplier:String,val total:Long,val method:String)
-data class CashShift(val id:String,val opened:String,val opening:Long,val expected:Long)
+data class CashShift(val id:String,val opened:String,val opening:Long,val expected:Long,val operator:String)
 data class FinanceSummary(
     val today:Long,val yesterday:Long,val week:Long,val month:Long,val profit:Long,
     val receivable:Long,val payable:Long,val purchases:Long,val lowStock:Int,val stockValue:Long,
@@ -146,14 +146,14 @@ class BusinessOps(private val store:Store){
         val result=db.rawQuery("SELECT opened,opening FROM cash_sessions WHERE id=?",arrayOf(id))
             .use{c->if(c.moveToFirst())Pair(c.getString(0),c.getLong(1)) else null}?:return null
         val movement=sum("SELECT COALESCE(SUM(amount),0) FROM cash_movements WHERE session_id=?",arrayOf(id))
-        return CashShift(id,result.first,result.second,Math.addExact(result.second,movement))
+        return CashShift(id,result.first,result.second,Math.addExact(result.second,movement),db.rawQuery("SELECT operator FROM cash_sessions WHERE id=?",arrayOf(id)).use{q->if(q.moveToFirst())q.getString(0) else "No registrado"})
     }
 
-    @Synchronized fun startCash(initial:Long){
+    @Synchronized fun startCash(initial:Long,operator:String){
         require(initial>=0){"Fondo inicial inválido"}
         require(currentId()==null){"Ya hay una caja abierta"}
-        db.execSQL("INSERT INTO cash_sessions(id,opened,opening) VALUES(?,?,?)",
-            arrayOf(UUID.randomUUID().toString(),stamp(),initial))
+        db.execSQL("INSERT INTO cash_sessions(id,opened,opening,operator) VALUES(?,?,?,?)",
+            arrayOf(UUID.randomUUID().toString(),stamp(),initial,operator))
     }
 
     @Synchronized fun cashMove(amount:Long,reason:String,withdrawal:Boolean){
