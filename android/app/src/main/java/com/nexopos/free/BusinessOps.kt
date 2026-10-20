@@ -9,7 +9,8 @@ import java.util.UUID
 private fun stamp():String=SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US).format(Date())
 data class PurchaseItem(val productId:String?,val name:String,val category:String,val qty:Int,val cost:Long,val salePrice:Long)
 data class PurchaseRecord(val id:String,val date:String,val supplier:String,val total:Long,val method:String)
-data class CashShift(val id:String,val opened:String,val opening:Long,val expected:Long)
+data class CashShift(val id:String,val opened:String,val opening:Long,val expected:Long,val operator:String)
+data class CashShiftHistory(val id:String,val opened:String,val opening:Long,val closed:String?,val counted:Long?,val expected:Long,val operator:String)
 data class FinanceSummary(
     val today:Long,val yesterday:Long,val week:Long,val month:Long,val profit:Long,
     val receivable:Long,val payable:Long,val purchases:Long,val lowStock:Int,val stockValue:Long,
@@ -146,14 +147,14 @@ class BusinessOps(private val store:Store){
         val result=db.rawQuery("SELECT opened,opening FROM cash_sessions WHERE id=?",arrayOf(id))
             .use{c->if(c.moveToFirst())Pair(c.getString(0),c.getLong(1)) else null}?:return null
         val movement=sum("SELECT COALESCE(SUM(amount),0) FROM cash_movements WHERE session_id=?",arrayOf(id))
-        return CashShift(id,result.first,result.second,Math.addExact(result.second,movement))
+        return CashShift(id,result.first,result.second,Math.addExact(result.second,movement),db.rawQuery("SELECT operator FROM cash_sessions WHERE id=?",arrayOf(id)).use{q->if(q.moveToFirst())q.getString(0) else "No registrado"})
     }
 
-    @Synchronized fun startCash(initial:Long){
+    @Synchronized fun startCash(initial:Long,operator:String){
         require(initial>=0){"Fondo inicial inválido"}
         require(currentId()==null){"Ya hay una caja abierta"}
-        db.execSQL("INSERT INTO cash_sessions(id,opened,opening) VALUES(?,?,?)",
-            arrayOf(UUID.randomUUID().toString(),stamp(),initial))
+        db.execSQL("INSERT INTO cash_sessions(id,opened,opening,operator) VALUES(?,?,?,?)",
+            arrayOf(UUID.randomUUID().toString(),stamp(),initial,operator))
     }
 
     @Synchronized fun cashMove(amount:Long,reason:String,withdrawal:Boolean){
@@ -180,6 +181,24 @@ class BusinessOps(private val store:Store){
         }finally{db.endTransaction()}
     }
 
+    @Synchronized fun cashHistory():List<CashShiftHistory>{
+        val rows=mutableListOf<CashShiftHistory>()
+        db.rawQuery("SELECT id,opened,opening,closed,counted,expected,operator FROM cash_sessions ORDER BY opened DESC",null).use{cursor->
+            while(cursor.moveToNext()){
+                val id=cursor.getString(0)
+                val expected=if(cursor.isNull(5))cursor.getLong(2)+sum("SELECT COALESCE(SUM(amount),0) FROM cash_movements WHERE session_id=?",arrayOf(id)) else cursor.getLong(5)
+                rows.add(CashShiftHistory(id,cursor.getString(1),cursor.getLong(2),if(cursor.isNull(3))null else cursor.getString(3),if(cursor.isNull(4))null else cursor.getLong(4),expected,cursor.getString(6)))
+            }
+        }
+        return rows
+    }
+    @Synchronized fun cashMoves(id:String):List<CashMove>{
+        val result=mutableListOf<CashMove>()
+        db.rawQuery("SELECT id,date,kind,amount,note FROM cash_movements WHERE session_id=? ORDER BY date DESC",arrayOf(id)).use{cursor->
+            while(cursor.moveToNext())result.add(CashMove(cursor.getString(0),cursor.getString(1),cursor.getString(2),cursor.getLong(3),cursor.getString(4)))
+        }
+        return result
+    }
     @Synchronized fun cashMoves():List<CashMove>{
         val id=currentId()?:return emptyList()
         val result=mutableListOf<CashMove>()
