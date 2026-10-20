@@ -101,6 +101,74 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
             }
         }
     }
+    /**
+     * Recover the latest complete Drive JSON snapshot after user confirmation.
+     * The SQLite transaction is only committed after all schema checks pass.
+     */
+    fun restoreFromDrive(account:GoogleSignInAccount,done:(Boolean,String)->Unit){
+        thread.execute{
+            try{
+                val email=account.email?:error("Sin correo Google")
+                val owner=prefs.getString("owner_email",null)
+                require(owner==null||owner==email){"Debe utilizar la cuenta Google que guardó los datos"}
+                val token=GoogleAuthUtil.getToken(activity,Account(email,"com.google"),"oauth2:$DRIVE_SCOPE")
+                val root=folder(token,"NEXO POS",null)
+                val where="name contains 'nexo-backup-' and mimeType = 'application/json' and trashed = false and '"+
+                    root+"' in parents"
+                val url=drive+"?q="+enc(where)+"&orderBy="+enc("createdTime desc")+
+                    "&pageSize=1&fields="+enc("files(id,name)")
+                val files=JSONObject(request(token,"GET",url)).optJSONArray("files")
+                require(files!=null&&files.length()>0){"No existe ninguna copia de seguridad NEXO POS en Drive"}
+                val fileId=files.getJSONObject(0).getString("id")
+                val backup=JSONObject(request(token,"GET",drive+"/"+fileId+"?alt=media"))
+                require(backup.getInt("version")==1&&backup.getString("owner")==email){
+                    "La copia pertenece a otra cuenta o tiene un formato incompatible"
+                }
+                val data=backup.getJSONObject("tables")
+                val tableNames=listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos")
+                val restored=linkedMapOf<String,List<List<String>>>()
+                var photoIssues=0
+                for(tab in tableNames){
+                    val list=mutableListOf<List<String>>()
+                    val rows=data.getJSONArray(tab)
+                    for(i in 0 until rows.length()){
+                        val raw=rows.getJSONArray(i)
+                        val cols=(0 until raw.length()).map{raw.optString(it,"")}.toMutableList()
+                        if(tab=="Productos"&&i>0&&cols.size>7&&cols[7].startsWith("drive:")){
+                            val photoId=cols[7].removePrefix("drive:")
+                            try{
+                                val dir=File(activity.filesDir,"nexo-fotos")
+                                dir.mkdirs()
+                                val file=File(dir,cols[0].replace(Regex("[^a-zA-Z0-9_-]"),"")+".jpg")
+                                downloadPhoto(token,photoId,file)
+                                cols[7]=Uri.fromFile(file).toString()
+                            }catch(_:Exception){photoIssues++}
+                        }
+                        list.add(cols)
+                    }
+                    restored[tab]=list
+                }
+                store.restore(restored)
+                prefs.edit().putString("owner_email",email).apply()
+                done(true,"Se recuperaron los registros de Google Drive. "+
+                    if(photoIssues>0)"Fotografías no descargadas: "+photoIssues else "Fotografías restauradas.")
+            }catch(e:UserRecoverableAuthException){
+                activity.runOnUiThread{activity.startActivityForResult(e.intent,151)}
+                done(false,"Google requiere autorización adicional. Autorícela e inténtelo nuevamente.")
+            }catch(e:Exception){
+                done(false,"No se restauraron los datos. "+(e.message?:""))
+            }
+        }
+    }
+    private fun downloadPhoto(token:String,id:String,dest:File){
+        val con=URL(drive+"/"+enc(id)+"?alt=media").openConnection() as HttpURLConnection
+        try{
+            con.setRequestProperty("Authorization","Bearer "+token)
+            con.connectTimeout=14000;con.readTimeout=30000
+            require(con.responseCode==200){"Drive no pudo recuperar la fotografía"}
+            con.inputStream.use{input->dest.outputStream().use{output->input.copyTo(output)}}
+        }finally{con.disconnect()}
+    }
     private fun enc(raw:String)=URLEncoder.encode(raw,"UTF-8")
     private fun request(token:String,method:String,url:String,body:String?=null):String{
         val con=URL(url).openConnection() as HttpURLConnection
