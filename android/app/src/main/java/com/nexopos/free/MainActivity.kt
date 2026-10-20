@@ -347,9 +347,25 @@ class MainActivity : Activity() {
             toast("Sincronizando. No cierre la aplicación.")
             google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
         }
+        addButton(body,"Recuperar copia de seguridad de Drive"){
+            val signed=GoogleSignIn.getLastSignedInAccount(this)
+            if(signed==null){toast("Primero entre con Google");return@addButton}
+            AlertDialog.Builder(this).setTitle("Restaurar datos desde Google")
+                .setMessage("Se sustituirán TODOS los productos, ventas, clientes, fiados y abonos del teléfono por la última copia completa de NEXO POS en Drive. Este cambio no se puede deshacer. ¿Desea continuar?")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Restaurar"){_,_->
+                    toast("Recuperando la copia de Google Drive...")
+                    google?.restoreFromDrive(signed){ok,message->
+                        runOnUiThread{
+                            if(ok){cart.clear();chosenCustomer=null;render()}
+                            toast(message)
+                        }
+                    }
+                }.show()
+        }
         body.addView(info("Google Sheets: productos, ventas, detalle de ventas, clientes, proveedores y abonos."))
         body.addView(info("Google Calendar: desde Clientes puede preparar recordatorios de cobros, confirmándolos en su calendario."))
-        body.addView(info("El teléfono conserva su base de datos aun cuando no tenga conexión. La sincronización utiliza tu permiso de Google Drive."))
+        body.addView(info("El teléfono conserva sus datos sin conexión. Sincronizar crea una copia JSON restaurable en Drive y actualiza la hoja de cálculo."))
         body.addView(info("IMPORTANTE: esta primera versión es experimental. No cargue ventas reales sin antes probar la recuperación desde la nube y la impresión."))
     }
     private fun openScanner(){
