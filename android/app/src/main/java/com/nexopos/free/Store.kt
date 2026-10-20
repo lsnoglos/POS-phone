@@ -71,10 +71,12 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
         }
         return rows
     }
-    @Synchronized fun saveParty(type:String,name:String,phone:String){
+    @Synchronized fun saveParty(type:String,name:String,phone:String):String{
         require(type=="cliente" || type=="proveedor")
         require(name.isNotBlank()){"Escriba el nombre"}
-        writableDatabase.execSQL("INSERT INTO parties(id,type,name,phone,balance) VALUES(?,?,?,?,0)",arrayOf(UUID.randomUUID().toString(),type,name.trim(),phone.trim()))
+        val id=UUID.randomUUID().toString()
+        writableDatabase.execSQL("INSERT INTO parties(id,type,name,phone,balance) VALUES(?,?,?,?,0)",arrayOf(id,type,name.trim(),phone.trim()))
+        return id
     }
     @Synchronized fun sales():List<Sale>{
         val rows=mutableListOf<Sale>()
