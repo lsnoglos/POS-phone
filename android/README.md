@@ -11,6 +11,44 @@ Esta carpeta contiene una **aplicación Android nativa de prueba**, separada de 
 5. Extrae `app-debug.apk`, pásalo a tu teléfono e instálalo autorizando temporalmente a tu administrador de archivos para instalar aplicaciones externas.
 6. Desactiva esa autorización cuando termines. Esta APK es experimental, no la utilices aún con información económica real.
 
+## Versión Android 0.2: módulos y mejoras
+
+- **Inicio:** dashboard oscuro con accesos directos y totales reales de ventas, cuentas por cobrar/pagar, compras e inventario.
+- **Venta:** catálogo, búsqueda instantánea, carrito visible que se conserva entre pantallas, editor de cantidades y diálogo de cobro con cliente/fiado.
+- **Escanear:** cámara abierta en modo continuo, carrito visible, edición +/− y protección contra duplicación de fotogramas; se confirma la venta al volver al POS.
+- **Compras:** seleccionar o registrar proveedor, añadir productos registrados o nuevos, editar cantidades, costo/venta, factura, flete y crédito, y recibir mercancía en una sola transacción.
+- **Caja:** fondo inicial, entradas, retiros, efectivo esperado, arqueo y cierre, junto con movimientos de cobros, compras y abonos al usar caja abierta.
+- **Inventario:** registro y edición; etiquetas QR en papel carta con productos seleccionados, fotografía opcional, copias, márgenes, columnas y filas.
+- **Negocio:** ajustes de nombre, dirección, contacto, identificación fiscal y días de crédito, guardados en SQLite.
+- **Proveedores:** cuentas pendientes y abonos; asociación a productos recibidos.
+- **Google:** diagnóstico preciso de errores OAuth con identificación y huella SHA-1 del APK instalado; Drive se autoriza solamente cuando se sincroniza. Sheets y los respaldos incluyen los nuevos módulos.
+
+Los cambios usan la base local SQLite versión 2 y una migración que **conserva las tablas anteriores**. No se asegura compatibilidad con archivos JSON de respaldo creados con una versión anterior de la estructura; las copias nuevas sí incluyen los módulos añadidos.
+
+### Resolver el inicio de sesión de Google (DEVELOPER_ERROR, código 10)
+
+1. Instala la **versión exacta del APK** que utilizarás para las pruebas.
+2. Abre la pestaña **Más → Cuenta de Google**.
+3. Pulsa **Copiar datos para Google Cloud**. Verás el paquete `com.nexopos.free` y la **huella SHA-1 real de ese APK instalado**. No reutilices una huella de otra compilación.
+4. En [Google Cloud Console](https://console.cloud.google.com/), crea o selecciona un proyecto. En **Google Auth Platform**, completa **Branding** y **Audience**, selecciona aplicación externa en fase de prueba y agrega la cuenta Gmail con la que entrarás como usuario de prueba.
+5. En **Clients → Create client**, elige **Android**, introduce el paquete y el SHA-1 exactos que muestra el teléfono. Esto crea un **OAuth client ID Android**, no un ID web.
+6. Habilita **Google Drive API** y **Google Sheets API** en la biblioteca de APIs del proyecto. Para la sincronización, concede `https://www.googleapis.com/auth/drive.file` en Data Access/consentimiento cuando se solicite.
+7. Espera unos minutos si las credenciales acaban de crearse y vuelve a iniciar sesión. Si falla, abre el cuadro de error y anota el **código numérico**; código 10 suele indicar error de firma/identidad o configuración del proyecto.
+
+No se debe poner un **Client Secret** en una APK. La sesión Google no depende de una base de datos externa. El acceso a Drive se solicita al sincronizar, no durante el inicio de sesión básico.
+
+### Firma Android estable para actualizaciones
+
+Por defecto, GitHub Actions usa un certificado de depuración **nuevo en cada ejecutor**. Esto significa que un APK más reciente puede mostrar `Aplicación no instalada` si conserva el mismo paquete pero usa otra firma. No desinstales si tienes datos valiosos sin copia recuperable.
+
+El workflow admite una clave privada de firma estable en el **GitHub Actions Secret** `NEXO_DEBUG_KEYSTORE_BASE64`, que debe contener una codificación Base64 del archivo `debug.keystore` generado por ti. Debe ser un almacén compatible con el alias `androiddebugkey` y las contraseñas de depuración de Android. Guarda el keystore original en un lugar seguro: **nunca lo publiques ni lo subas al repositorio**.
+
+Cuando se configure ese Secret, compila e instala una vez la APK con firma permanente. Después registra el SHA-1 mostrado en Google Cloud, y las siguientes compilaciones utilizarán esa firma mientras se mantenga el Secret.
+
+### Límite de uso
+
+Es una versión de desarrollo **para un solo dispositivo / un solo propietario**. La autenticación Google vincula el respaldo a una cuenta; Google Sheets actúa como réplica legible, **no** como sistema multi-caja transaccional. Para múltiples teléfonos compartiendo inventario simultáneamente hará falta un diseño diferente.
+
 ## Qué permite probar sin Google
 
 - Crear y editar productos, costos, precios, existencias, categorías y fotografías locales.

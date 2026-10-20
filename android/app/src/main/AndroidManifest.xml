@@ -8,7 +8,7 @@
         android:fullBackupContent="true"
         android:usesCleartextTraffic="false"
         android:label="NEXO POS"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@android:style/Theme.Material.NoActionBar"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"
@@ -19,5 +19,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".ContinuousScanActivity" android:exported="false" />
     </application>
 </manifest>
