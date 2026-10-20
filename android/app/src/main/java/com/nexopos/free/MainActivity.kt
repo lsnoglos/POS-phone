@@ -8,7 +8,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.provider.DocumentsContract
+import android.provider.CalendarContract
 import android.text.Editable
 import android.text.TextWatcher
 import android.text.InputType
@@ -289,13 +289,24 @@ class MainActivity : Activity() {
         store.parties(type).forEach{p->
             body.addView(title(p.name,17f))
             body.addView(info("Teléfono: "+p.phone+" · saldo: "+money(p.balance)))
-            if(type=="cliente" && p.balance>0L)addButton(body,"Registrar abono de "+p.name){
+            if(type=="cliente" && p.balance>0L){
+                addButton(body,"Recordar cobro en Google Calendar"){
+                    val whenAt=System.currentTimeMillis()+24L*60L*60L*1000L
+                    val event=Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
+                        .putExtra(CalendarContract.Events.TITLE,"Cobrar a "+p.name)
+                        .putExtra(CalendarContract.Events.DESCRIPTION,"Saldo pendiente en NEXO POS: "+money(p.balance))
+                        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME,whenAt)
+                        .putExtra(CalendarContract.EXTRA_EVENT_END_TIME,whenAt+30L*60L*1000L)
+                    try{startActivity(event)}catch(_:Exception){toast("No hay una aplicación Calendar disponible")}
+                }
+                addButton(body,"Registrar abono de "+p.name){
                 val input=field("Importe abonado",numeric=true)
                 AlertDialog.Builder(this).setTitle("Abonar cuenta").setView(input)
                     .setNegativeButton("Cancelar",null).setPositiveButton("Guardar"){_,_->
                         try{store.payment(p.id,cents(input.text.toString()));render();toast("Abono registrado")}
                         catch(e:Exception){toast(e.message?:"Abono inválido")}
                     }.show()
+            }
             }
         }
     }
@@ -326,7 +337,7 @@ class MainActivity : Activity() {
         addButton(body,if(account==null)"Entrar con Google" else "Cambiar cuenta"){
             val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
-                .requestScopes(Scope(GoogleCloud.DRIVE_SCOPE),Scope(GoogleCloud.CALENDAR_SCOPE))
+                .requestScopes(Scope(GoogleCloud.DRIVE_SCOPE))
                 .build()
             GoogleSignIn.getClient(this,options).signInIntent.also{startActivityForResult(it,120)}
         }
@@ -337,6 +348,7 @@ class MainActivity : Activity() {
             google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
         }
         body.addView(info("Google Sheets: productos, ventas, detalle de ventas, clientes, proveedores y abonos."))
+        body.addView(info("Google Calendar: desde Clientes puede preparar recordatorios de cobros, confirmándolos en su calendario."))
         body.addView(info("El teléfono conserva su base de datos aun cuando no tenga conexión. La sincronización utiliza tu permiso de Google Drive."))
         body.addView(info("IMPORTANTE: esta primera versión es experimental. No cargue ventas reales sin antes probar la recuperación desde la nube y la impresión."))
     }
