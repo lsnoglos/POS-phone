@@ -437,6 +437,19 @@ class MainActivity : Activity() {
         store.parties(type).forEach{p->
             body.addView(title(p.name,17f))
             body.addView(info("Teléfono: "+p.phone+" · saldo: "+money(p.balance)))
+            if(type=="proveedor"&&p.balance>0L){
+                addButton(body,"Abonar cuenta a "+p.name){
+                    val amount=field("Monto del pago",numeric=true)
+                    AlertDialog.Builder(this).setTitle("Abono a proveedor · "+p.name)
+                        .setView(amount).setNegativeButton("Cancelar",null)
+                        .setPositiveButton("Guardar pago"){_,_->
+                            try{
+                                ops.supplierPayment(p.id,cents(amount.text.toString()))
+                                render();toast("Abono de proveedor registrado")
+                            }catch(e:Exception){toast(e.message?:"Abono inválido")}
+                        }.show()
+                }
+            }
             if(type=="cliente" && p.balance>0L){
                 addButton(body,"Recordar cobro en Google Calendar"){
                     val whenAt=System.currentTimeMillis()+24L*60L*60L*1000L
@@ -465,8 +478,11 @@ class MainActivity : Activity() {
         box.addView(name);box.addView(phone)
         AlertDialog.Builder(this).setTitle("Nuevo "+type).setView(box).setNegativeButton("Cancelar",null)
             .setPositiveButton("Guardar"){_,_->
-                try{store.saveParty(type,name.text.toString(),phone.text.toString());render()}
-                catch(e:Exception){toast(e.message?:"Error de guardado")}
+                try{
+                    val createdId=store.saveParty(type,name.text.toString(),phone.text.toString())
+                    if(type=="proveedor"&&tab=="Compra")purchaseSupplierId=createdId
+                    render()
+                }catch(e:Exception){toast(e.message?:"Error de guardado")}
             }.show()
     }
 
