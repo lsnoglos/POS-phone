@@ -14,6 +14,10 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.io.File
 import java.util.concurrent.Executors
 
 /**
@@ -35,6 +39,10 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
         thread.execute {
             try{
                 val email=account.email ?: error("La cuenta no tiene correo")
+                val owner=prefs.getString("owner_email",null)
+                require(owner==null || owner==email) {
+                    "Esta instalación pertenece a otra cuenta Google. No se puede mezclar información."
+                }
                 val token=GoogleAuthUtil.getToken(activity,Account(email,"com.google"),"oauth2:$DRIVE_SCOPE")
                 val root=folder(token,"NEXO POS",null)
                 val imageRoot=folder(token,"Imágenes",root)
@@ -44,7 +52,8 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                 var photoErrors=0
                 for(p in store.products()){
                     if(p.photo.isBlank())continue
-                    val key="photo_"+email+"_"+p.id
+                    if(p.photo.startsWith("drive:")){photos[p.id]=p.photo;continue}
+                    val key="photo_"+email+"_"+p.id+"_"+p.photo.hashCode()+"_"+p.category.hashCode()
                     val known=prefs.getString(key,null)
                     if(known!=null){
                         photos[p.id]="drive:"+known
@@ -57,7 +66,9 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                         photos[p.id]="drive:"+photoId
                     }catch(_:Exception){photoErrors++}
                 }
+                if(photoErrors>0) error("Hay "+photoErrors+" fotografías pendientes. No se creó una copia incompleta.")
                 val data=JSONArray()
+                val backupTables=JSONObject()
                 for((tab,rows) in original){
                     val values=JSONArray()
                     rows.forEachIndexed { index,row->
@@ -68,13 +79,20 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                         }
                         values.put(dataRow)
                     }
+                    backupTables.put(tab,values)
                     data.put(JSONObject().put("range",tab+"!A1").put("values",values))
                 }
+                val backup=JSONObject().put("version",1).put("owner",email)
+                    .put("tables",backupTables).put("createdAt",System.currentTimeMillis())
+                val backupDate=SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(Date())
+                uploadBytes(token,JSONObject().put("name","nexo-backup-"+backupDate+".json")
+                    .put("mimeType","application/json").put("parents",JSONArray().put(root)),
+                    "application/json",backup.toString().toByteArray(Charsets.UTF_8))
                 request(token,"POST",sheets+"/"+spreadsheet+"/values:batchUpdate",
                     JSONObject().put("valueInputOption","RAW").put("data",data).toString())
-                prefs.edit().putString("sheet_"+email,spreadsheet).apply()
-                done("Sincronizado con Google Sheets. "+original.size+" tablas. "+
-                    if(photoErrors>0)"Fotos pendientes: $photoErrors" else "Fotos guardadas en Drive.")
+                prefs.edit().putString("owner_email",email).putString("sheet_"+email,spreadsheet).apply()
+                done("Guardado en Google Sheets y copia recuperable en Drive. "+
+                    original.size+" tablas; imágenes organizadas por categoría.")
             }catch(e:UserRecoverableAuthException){
                 activity.runOnUiThread{activity.startActivityForResult(e.intent,151)}
                 done("Google requiere autorización adicional. Concédala e intente sincronizar otra vez.")
@@ -145,13 +163,16 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
             bitmap.compress(Bitmap.CompressFormat.JPEG,78,bytes)
             bitmap.recycle()
         }?:error("No se pudo abrir la fotografía")
-        val boundary="NexoBoundaryCloudUpload"
         val metadata=JSONObject().put("name",product.id+".jpg").put("parents",JSONArray().put(parent))
             .put("mimeType","image/jpeg")
+        return uploadBytes(token,metadata,"image/jpeg",bytes.toByteArray())
+    }
+    private fun uploadBytes(token:String,metadata:JSONObject,mime:String,bytes:ByteArray):String{
+        val boundary="NexoBoundaryCloudUpload"
         val data=ByteArrayOutputStream()
         data.write(("--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+
-            metadata.toString()+"\r\n--"+boundary+"\r\nContent-Type: image/jpeg\r\n\r\n").toByteArray())
-        data.write(bytes.toByteArray())
+            metadata.toString()+"\r\n--"+boundary+"\r\nContent-Type: "+mime+"\r\n\r\n").toByteArray())
+        data.write(bytes)
         data.write(("\r\n--"+boundary+"--").toByteArray())
         val con=URL("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id")
             .openConnection() as HttpURLConnection
