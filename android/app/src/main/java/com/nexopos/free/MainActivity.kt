@@ -214,6 +214,7 @@ class MainActivity : Activity() {
             "Configuración"->renderSettings()
             "Turnos"->renderCashHistory()
         }
+        if(appearance.getBoolean("ad_slot",false))root.addView(TextView(this).apply{text="Espacio publicitario · sin anuncios activos";textSize=11f;gravity=Gravity.CENTER;setTextColor(muted)},LinearLayout.LayoutParams(-1,dp(32)))
         val nav=row()
         val selected=when(tab){
             "Compra","Caja","Turnos"->"Finanzas"
@@ -812,6 +813,9 @@ class MainActivity : Activity() {
                 ops.saveSettings(data);render();toast("Configuración guardada localmente")
             }catch(e:Exception){toast(e.message?:"Datos inválidos")}
         }
+        body.addView(title("Publicidad",20f))
+        body.addView(info("La franja publicitaria es opcional. No se mostrarán anuncios hasta integrar un proveedor."))
+        addButton(body,if(appearance.getBoolean("ad_slot",false))"Ocultar espacio publicitario" else "Reservar espacio publicitario"){appearance.edit().putBoolean("ad_slot",!appearance.getBoolean("ad_slot",false)).apply();render()}
         body.addView(title("Apariencia y marca",20f))
         addButton(body,"Seleccionar logo del negocio"){
             val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{
