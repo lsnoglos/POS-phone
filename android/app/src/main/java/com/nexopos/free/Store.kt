@@ -29,12 +29,13 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
             db.execSQL("ALTER TABLE lines ADD COLUMN cost INTEGER NOT NULL DEFAULT 0")
             createExtraSchema(db)
         }
+        if(oldVersion<3)db.execSQL("ALTER TABLE cash_sessions ADD COLUMN operator TEXT NOT NULL DEFAULT 'No registrado'")
     }
     private fun createExtraSchema(db:SQLiteDatabase){
         db.execSQL("CREATE TABLE IF NOT EXISTS purchases(id TEXT PRIMARY KEY,date TEXT NOT NULL,supplier_id TEXT,supplier_name TEXT NOT NULL,invoice TEXT NOT NULL,freight INTEGER NOT NULL,method TEXT NOT NULL,total INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS purchase_lines(id TEXT PRIMARY KEY,purchase_id TEXT NOT NULL,product_id TEXT NOT NULL,name TEXT NOT NULL,qty INTEGER NOT NULL,cost INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS product_suppliers(product_id TEXT NOT NULL,supplier_id TEXT NOT NULL,last_cost INTEGER NOT NULL,updated TEXT NOT NULL,PRIMARY KEY(product_id,supplier_id))")
-        db.execSQL("CREATE TABLE IF NOT EXISTS cash_sessions(id TEXT PRIMARY KEY,opened TEXT NOT NULL,opening INTEGER NOT NULL,closed TEXT,counted INTEGER,expected INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS cash_sessions(id TEXT PRIMARY KEY,opened TEXT NOT NULL,opening INTEGER NOT NULL,closed TEXT,counted INTEGER,expected INTEGER,operator TEXT NOT NULL DEFAULT 'No registrado')")
         db.execSQL("CREATE TABLE IF NOT EXISTS cash_movements(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,date TEXT NOT NULL,kind TEXT NOT NULL,amount INTEGER NOT NULL,note TEXT NOT NULL,reference TEXT NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS business_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS supplier_payments(id TEXT PRIMARY KEY,date TEXT NOT NULL,party_id TEXT NOT NULL,amount INTEGER NOT NULL)")
