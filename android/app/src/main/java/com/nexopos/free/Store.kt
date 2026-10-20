@@ -13,7 +13,7 @@ data class Product(val id:String,val name:String,val category:String,val barcode
 data class Party(val id:String,val type:String,val name:String,val phone:String,val balance:Long)
 data class Sale(val id:String,val date:String,val customer:String,val method:String,val total:Long)
 
-class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,2){
+class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
     override fun onCreate(db:SQLiteDatabase){
         db.execSQL("CREATE TABLE products(id TEXT PRIMARY KEY,name TEXT NOT NULL,category TEXT NOT NULL,barcode TEXT NOT NULL,cost INTEGER NOT NULL,price INTEGER NOT NULL,qty INTEGER NOT NULL CHECK(qty>=0),photo TEXT NOT NULL,updated TEXT NOT NULL)")
         db.execSQL("CREATE TABLE parties(id TEXT PRIMARY KEY,type TEXT NOT NULL,name TEXT NOT NULL,phone TEXT NOT NULL,balance INTEGER NOT NULL DEFAULT 0)")
