@@ -33,8 +33,10 @@ jobs:
           gradle-version: "8.9"
       - name: Instalar SDK Android
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          SDK_TOOL="$(find /usr/local/lib/android/sdk/cmdline-tools -type f -name sdkmanager | head -n 1)"
+          test -x "$SDK_TOOL" || { echo "Android sdkmanager no encontrado"; exit 1; }
+          yes | "$SDK_TOOL" --licenses >/dev/null || true
+          "$SDK_TOOL" "platforms;android-35" "build-tools;35.0.0"
       - name: Compilar APK de pruebas
         run: gradle --no-daemon :app:assembleDebug
       - name: Publicar APK de pruebas
