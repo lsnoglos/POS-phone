@@ -193,7 +193,7 @@ class MainActivity : Activity() {
             setOnClickListener{tab="Google";render()}
         })
         header.addView(identity,LinearLayout.LayoutParams(0,-2,1f))
-        header.addView(btn("⚙"){tab="Configuración";render()},LinearLayout.LayoutParams(dp(48),dp(42)))
+        header.addView(btn("⚙"){showQuickSettings()},LinearLayout.LayoutParams(dp(48),dp(42)))
         root.addView(header)
         val scroll=ScrollView(this)
         body=column().apply{setPadding(0,dp(4),0,dp(18))}
@@ -216,13 +216,14 @@ class MainActivity : Activity() {
         }
         val nav=row()
         val selected=when(tab){
-            "Compra","Caja"->"Finanzas"
+            "Compra","Caja","Turnos"->"Finanzas"
             "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
             else->tab
         }
         tabs.forEach{item->
             val action=btn(item){tab=item;render()}
             action.textSize=11f
+            action.text=mapOf("Inicio" to "⌂\nInicio","Venta" to "▣\nVenta","Inventario" to "▦\nInventario","Finanzas" to "▤\nFinanzas","Más" to "☷\nMás")[item]?:item
             if(item==selected)action.setTextColor(accentText())
             else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat()} }
             nav.addView(action,LinearLayout.LayoutParams(0,dp(49),1f).apply{rightMargin=dp(3)})
@@ -248,7 +249,11 @@ class MainActivity : Activity() {
             val line=row()
             pair.forEach{(label,detail,dest)->
                 val item=card()
-                item.addView(title(label,16f));item.addView(info(detail))
+                val palette=listOf(0xffe93c9c.toInt(),0xff6246ea.toInt(),0xff0eaa86.toInt(),0xfff49b36.toInt())
+                val color=palette[actions.indexOf(Triple(label,detail,dest)).coerceIn(0,3)]
+                item.background=GradientDrawable().apply{setColor(color);cornerRadius=dp(18).toFloat()}
+                item.addView(TextView(this).apply{text=label;textSize=18f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)})
+                item.addView(TextView(this).apply{text=detail;textSize=12f;setTextColor(Color.WHITE)})
                 item.setOnClickListener{tab=dest;render()}
                 line.addView(item,LinearLayout.LayoutParams(0,dp(114),1f).apply{rightMargin=dp(7)})
             }
@@ -766,6 +771,22 @@ class MainActivity : Activity() {
             }
             body.addView(panel)
         }
+    }
+    private fun showQuickSettings(){
+        AlertDialog.Builder(this).setTitle("NEXO POS")
+            .setItems(arrayOf("Configuración","Exportar a Google Sheets","Cuenta de Google","Cerrar sesión")){_,choice->
+                when(choice){
+                    0->{tab="Configuración";render()}
+                    1,2->{tab="Google";render();if(choice==1)toast("Pulse Guardar registros en Google Sheets")}
+                    3->AlertDialog.Builder(this).setTitle("Cerrar sesión de Google")
+                        .setMessage("Los datos locales se conservan en este teléfono.")
+                        .setNegativeButton("Cancelar",null)
+                        .setPositiveButton("Cerrar sesión"){_,_->
+                            val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
+                            GoogleSignIn.getClient(this,options).signOut().addOnCompleteListener{render()}
+                        }.show()
+                }
+            }.show()
     }
     private fun renderSettings(){
         body.addView(title("Configuración del negocio",24f))
