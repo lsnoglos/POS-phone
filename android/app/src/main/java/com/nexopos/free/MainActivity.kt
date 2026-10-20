@@ -185,7 +185,9 @@ class MainActivity : Activity() {
     }
     private fun render(){
         root.removeAllViews()
-        if(GoogleSignIn.getLastSignedInAccount(this)==null){renderLoginGate();return}
+        val signedEmail=GoogleSignIn.getLastSignedInAccount(this)?.email
+        val ownerEmail=getSharedPreferences("nexo_google",Context.MODE_PRIVATE).getString("owner_email",null)
+        if(signedEmail==null || (ownerEmail!=null && !ownerEmail.equals(signedEmail,ignoreCase=true))){renderLoginGate();return}
         val currentName=ops.setting("name","La pulpe")
         root.setBackgroundColor(cream)
         window.statusBarColor=cream
