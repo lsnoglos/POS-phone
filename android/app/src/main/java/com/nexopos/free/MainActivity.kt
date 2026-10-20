@@ -46,6 +46,8 @@ class MainActivity : Activity() {
     private val purchaseCart=linkedMapOf<String,PurchaseItem>()
     private var purchaseSupplierId:String?=null
     private var purchaseMethod="Contado"
+    private var purchaseInvoice=""
+    private var purchaseFreight="0"
     private val cart = linkedMapOf<String,Int>()
     private var chosenCustomer: String? = null
     private var chosenMethod = "Efectivo"
