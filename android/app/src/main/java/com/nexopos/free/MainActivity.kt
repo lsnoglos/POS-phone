@@ -212,6 +212,7 @@ class MainActivity : Activity() {
             "Historial"->renderHistory()
             "Google"->renderCloud()
             "Configuración"->renderSettings()
+            "Turnos"->renderCashHistory()
         }
         val nav=row()
         val selected=when(tab){
@@ -278,18 +279,15 @@ class MainActivity : Activity() {
         navigate("Caja y arqueo","Abrir y cerrar turnos, entradas y retiros","Caja")
         navigate("Compras","Recepción de mercancía y proveedores","Compra")
         navigate("Cuentas por cobrar","Fiados y abonos de clientes","Clientes")
-        navigate("Proveedores","Cuentas por pagar","Proveedores")
-        navigate("Historial de ventas","Registro de transacciones","Historial")
-        body.addView(info("Libro diario, libro mayor y estados financieros completos siguen en desarrollo."))
+        navigate("Historial de turnos","Aperturas, cierres y responsables","Turnos")
+        body.addView(info("Libro diario y libro mayor contables: en desarrollo."))
     }
     private fun renderMore(){
         body.addView(title("Más opciones",25f))
         listOf(
             Triple("Clientes y fiados","Saldos, abonos y recordatorios","Clientes"),
             Triple("Proveedores","Contactos, productos vinculados y deudas","Proveedores"),
-            Triple("Historial","Operaciones registradas","Historial"),
-            Triple("Configuración","Datos y preferencias del negocio","Configuración"),
-            Triple("Cuenta de Google","Sesión, Drive, Sheets y respaldos","Google")
+            Triple("Historial de acciones","Operaciones registradas","Historial")
         ).forEach{navigate(it.first,it.second,it.third)}
     }
     private fun rememberCart(){
@@ -707,11 +705,13 @@ class MainActivity : Activity() {
             val initial=field("Efectivo inicial C$","0",true)
             body.addView(initial)
             addButton(body,"Abrir caja"){
-                try{ops.startCash(cents(initial.text.toString()));render();toast("Caja abierta")}
+                try{ops.startCash(cents(initial.text.toString()),GoogleSignIn.getLastSignedInAccount(this)?.email?:"Operador local");render();toast("Caja abierta")}
                 catch(e:Exception){toast(e.message?:"Fondo inválido")}
             }
             return
         }
+        body.addView(info("Responsable de apertura: "+open.operator))
+        addButton(body,"Historial de aperturas y cierres"){tab="Turnos";render()}
         body.addView(stat("Efectivo esperado en el cajón",money(open.expected)))
         body.addView(info("Turno abierto: "+open.opened+" · fondo "+money(open.opening)))
         val amount=field("Monto de entrada o retiro C$",numeric=true)
@@ -749,6 +749,24 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun renderCashHistory(){
+        body.addView(title("Historial de turnos de caja",24f))
+        val sessions=ops.cashHistory()
+        if(sessions.isEmpty())body.addView(info("Todavía no hay turnos registrados."))
+        sessions.forEach{shift->
+            val panel=card()
+            panel.addView(title(shift.opened+" · "+if(shift.closed==null)"Abierta" else "Cerrada",16f))
+            panel.addView(info("Responsable: "+shift.operator))
+            panel.addView(info("Fondo inicial: "+money(shift.opening)+" · esperado: "+money(shift.expected)))
+            panel.addView(info("Cierre: "+(shift.closed?:"Pendiente")))
+            if(shift.counted!=null)panel.addView(info("Contado: "+money(shift.counted)+" · diferencia: "+money(shift.counted-shift.expected)))
+            addButton(panel,"Ver movimientos"){
+                val details=ops.cashMoves(shift.id).joinToString("\n"){move->move.date+" · "+move.kind+" · "+money(move.amount)+" · "+move.note}
+                AlertDialog.Builder(this).setTitle("Movimientos del turno").setMessage(details.ifEmpty{"Sin movimientos registrados"}).setPositiveButton("Cerrar",null).show()
+            }
+            body.addView(panel)
+        }
+    }
     private fun renderSettings(){
         body.addView(title("Configuración del negocio",24f))
         val props=listOf(
