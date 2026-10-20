@@ -863,8 +863,12 @@ class MainActivity : Activity() {
                 val prefs=getSharedPreferences("nexo_google",Context.MODE_PRIVATE)
                 val prior=prefs.getString("owner_email",null)
                 if(prior!=null&&prior!=email){
+                    val opts=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                        .requestEmail().build()
+                    GoogleSignIn.getClient(this,opts).signOut()
                     AlertDialog.Builder(this).setTitle("Cuenta distinta")
-                        .setMessage("Este negocio pertenece a "+prior+". Para evitar mezclar los datos, utilice esa misma cuenta.")
+                        .setMessage("Este negocio pertenece a "+prior+
+                            ". La sesión no se vinculó a la nueva cuenta para evitar mezclar inventarios. Utilice la cuenta original.")
                         .setPositiveButton("Entendido",null).show()
                 }else{
                     prefs.edit().putString("owner_email",email).apply()
