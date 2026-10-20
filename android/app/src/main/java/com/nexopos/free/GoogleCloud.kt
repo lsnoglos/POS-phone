@@ -125,7 +125,9 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                     "La copia pertenece a otra cuenta o tiene un formato incompatible"
                 }
                 val data=backup.getJSONObject("tables")
-                val tableNames=listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos")
+                val tableNames=listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos",
+                    "Compras","DetalleCompras","ProveedorProductos","CajaTurnos","CajaMovimientos",
+                    "Configuracion","AbonosProveedores")
                 val restored=linkedMapOf<String,List<List<String>>>()
                 var photoIssues=0
                 for(tab in tableNames){
@@ -206,7 +208,9 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
             .optJSONArray("files")
         if(existing!=null&&existing.length()>0)return existing.getJSONObject(0).getString("id")
         val tabs=JSONArray()
-        listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos").forEach{
+        listOf("Productos","Ventas","DetalleVentas","Clientes","Proveedores","Abonos",
+            "Compras","DetalleCompras","ProveedorProductos","CajaTurnos","CajaMovimientos",
+            "Configuracion","AbonosProveedores").forEach{
             tabs.put(JSONObject().put("properties",JSONObject().put("title",it)))
         }
         val sheetId=JSONObject(request(token,"POST",sheets,
