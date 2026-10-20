@@ -4,6 +4,10 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
+import android.view.WindowManager
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -58,17 +62,30 @@ class MainActivity : Activity() {
     private var pdfProducts=emptyList<Product>()
     private var pdfOptions=LabelPdf.Layout()
     private var google: GoogleCloud? = null
-    private val cream = Color.rgb(16,19,16)
-    private val surface = Color.rgb(29,33,28)
-    private val terracotta = Color.rgb(244,183,131)
-    private val ink = Color.rgb(248,244,235)
-    private val muted = Color.rgb(183,172,159)
+    private val appearance by lazy { getSharedPreferences("nexo_appearance",Context.MODE_PRIVATE) }
+    private fun lightTheme()=when(appearance.getString("theme","system")){
+        "light"->true;"dark"->false;else->(resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)!=android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+    private val cream get()=if(lightTheme())0xfff7f7f4.toInt() else 0xff101310.toInt()
+    private val surface get()=if(lightTheme())0xffffffff.toInt() else 0xff1d211c.toInt()
+    private val ink get()=if(lightTheme())0xff1b2520.toInt() else 0xfff8f4eb.toInt()
+    private val muted get()=if(lightTheme())0xff57635b.toInt() else 0xffb7aca0.toInt()
+    private val terracotta get():Int{
+        if(!appearance.getBoolean("use_logo_colors",false))return if(lightTheme())0xff176d56.toInt() else 0xfff4b783.toInt()
+        return appearance.getInt("logo_accent",0xff176d56.toInt())
+    }
+    private fun accentText():Int=if(androidxColorLuminance(terracotta)>0.47)Color.BLACK else Color.WHITE
+    private fun androidxColorLuminance(color:Int):Double{
+        fun channel(v:Int):Double{val x=v/255.0;return if(x<=0.04045)x/12.92 else Math.pow((x+0.055)/1.055,2.4)}
+        return 0.2126*channel(Color.red(color))+0.7152*channel(Color.green(color))+0.0722*channel(Color.blue(color))
+    }
     private val tabs = listOf("Inicio","Venta","Inventario","Finanzas","Más")
 
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor=cream
-        window.navigationBarColor=Color.BLACK
+        window.navigationBarColor=cream
+        window.decorView.systemUiVisibility=if(lightTheme()) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0
         store=Store(this)
         ops=BusinessOps(store)
         google=GoogleCloud(this,store)
@@ -82,7 +99,7 @@ class MainActivity : Activity() {
         }catch(_:Exception){}
         root=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL;setBackgroundColor(cream)
-            setPadding(dp(12),dp(10),dp(12),dp(8))
+            setPadding(dp(12),dp(3),dp(12),dp(4))
         }
         setContentView(root)
         render()
@@ -104,7 +121,7 @@ class MainActivity : Activity() {
     private fun column():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
     private fun row():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
     private fun btn(text:String,action:()->Unit):Button=Button(this).apply{
-        this.text=text;textSize=13f;setAllCaps(false);setTextColor(Color.BLACK)
+        this.text=text;textSize=13f;setAllCaps(false);setTextColor(accentText());minHeight=0;minimumHeight=0;includeFontPadding=false
         background=GradientDrawable().apply{setColor(terracotta);cornerRadius=dp(14).toFloat()}
         setPadding(dp(10),dp(8),dp(10),dp(8))
         setOnClickListener{action()}
@@ -118,7 +135,7 @@ class MainActivity : Activity() {
         if(numeric)inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         setPadding(dp(12),dp(5),dp(12),dp(5))
         background=GradientDrawable().apply{
-            setColor(surface);cornerRadius=dp(12).toFloat();setStroke(dp(1),0xff5b5a51.toInt())
+            setColor(surface);cornerRadius=dp(12).toFloat();setStroke(dp(1),if(lightTheme())0xffdce3dd.toInt() else 0xff5b5a51.toInt())
         }
         layoutParams=LinearLayout.LayoutParams(-1,dp(53)).apply{bottomMargin=dp(9)}
     }
@@ -139,8 +156,32 @@ class MainActivity : Activity() {
     private fun render(){
         root.removeAllViews()
         val currentName=ops.setting("name","La pulpe")
+        root.setBackgroundColor(cream)
+        window.statusBarColor=cream
+        window.navigationBarColor=cream
+        window.decorView.systemUiVisibility=if(lightTheme()) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0
         val header=row()
-        header.addView(title("NEXO POS · "+currentName,20f),LinearLayout.LayoutParams(0,-2,1f))
+        val logoPath=appearance.getString("logo_uri",null)
+        if(!logoPath.isNullOrBlank()){
+            val image=ImageView(this).apply{
+                try{contentResolver.openInputStream(Uri.parse(logoPath))?.use{setImageBitmap(BitmapFactory.decodeStream(it))}}
+                catch(_:Exception){}
+                scaleType=ImageView.ScaleType.CENTER_CROP
+                background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat()}
+                clipToOutline=true
+            }
+            header.addView(image,LinearLayout.LayoutParams(dp(42),dp(42)).apply{rightMargin=dp(9)})
+        }
+        val identity=column()
+        identity.addView(title("NEXO POS · "+currentName,18f))
+        val email=GoogleSignIn.getLastSignedInAccount(this)?.email
+        identity.addView(TextView(this).apply{
+            text=email?:"Sin sesión de Google · toca aquí para entrar"
+            textSize=11f;setTextColor(if(email==null)muted else if(lightTheme())0xff08754d.toInt() else 0xffa3edb7.toInt())
+            maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END
+            setOnClickListener{tab="Google";render()}
+        })
+        header.addView(identity,LinearLayout.LayoutParams(0,-2,1f))
         header.addView(btn("⚙"){tab="Configuración";render()},LinearLayout.LayoutParams(dp(48),dp(42)))
         root.addView(header)
         val scroll=ScrollView(this)
@@ -170,11 +211,11 @@ class MainActivity : Activity() {
         tabs.forEach{item->
             val action=btn(item){tab=item;render()}
             action.textSize=11f
-            if(item==selected)action.setTextColor(Color.BLACK)
+            if(item==selected)action.setTextColor(accentText())
             else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat()} }
             nav.addView(action,LinearLayout.LayoutParams(0,dp(49),1f).apply{rightMargin=dp(3)})
         }
-        root.addView(nav)
+        root.addView(nav,LinearLayout.LayoutParams(-1,dp(46)))
     }
     private fun renderDashboard(){
         val summary=ops.summary()
@@ -721,6 +762,40 @@ class MainActivity : Activity() {
                 ops.saveSettings(data);render();toast("Configuración guardada localmente")
             }catch(e:Exception){toast(e.message?:"Datos inválidos")}
         }
+        body.addView(title("Apariencia y marca",20f))
+        addButton(body,"Seleccionar logo del negocio"){
+            val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{
+                addCategory(Intent.CATEGORY_OPENABLE);type="image/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+            startActivityForResult(intent,160)
+        }
+        val themeChoices=listOf("Automático (sistema)","Claro","Oscuro")
+        val themeValues=listOf("system","light","dark")
+        body.addView(info("Tema de la aplicación"))
+        val themeSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,themeChoices)
+            setSelection(themeValues.indexOf(appearance.getString("theme","system")).coerceAtLeast(0))
+            onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+                override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+                override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){
+                    val value=themeValues[position]
+                    if(value!=appearance.getString("theme","system")){
+                        appearance.edit().putString("theme",value).apply();render()
+                    }
+                }
+            }
+        }
+        body.addView(themeSpinner)
+        val autoColor=CheckBox(this).apply{
+            text="Aplicar el color principal del logo";setTextColor(ink)
+            isChecked=appearance.getBoolean("use_logo_colors",false)
+            setOnCheckedChangeListener{_,checked->
+                appearance.edit().putBoolean("use_logo_colors",checked).apply()
+                render()
+            }
+        }
+        body.addView(autoColor)
         body.addView(info("Los datos del negocio se incluirán en el respaldo de Google Drive cuando esté conectado."))
         body.addView(info("Moneda para esta edición: Córdoba (C$). Antes de habilitar otra moneda deben adaptarse formatos y cálculos."))
     }
@@ -753,7 +828,11 @@ class MainActivity : Activity() {
     private fun renderCloud(){
         body.addView(title("Tu cuenta de Google"))
         val account=GoogleSignIn.getLastSignedInAccount(this)
-        body.addView(info(account?.email ?: "No conectada. Puede usar esta versión local para probar el punto de venta."))
+        body.addView(TextView(this).apply{
+            text=account?.email ?: "No conectada. Puede usar esta versión local para probar el punto de venta."
+            textSize=16f;setTextColor(if(account==null)muted else if(lightTheme())0xff08754d.toInt() else 0xffa3edb7.toInt())
+            setPadding(0,dp(6),0,dp(8))
+        })
         val sha=installedSha1()
         body.addView(info("Identificador de la aplicación: "+packageName))
         body.addView(info("SHA-1 de este APK: "+sha))
@@ -772,9 +851,9 @@ class MainActivity : Activity() {
         addButton(body,"Guardar registros en Google Sheets"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
-            val scope=Scope(GoogleCloud.DRIVE_SCOPE)
-            if(!GoogleSignIn.hasPermissions(signed,scope)){
-                GoogleSignIn.requestPermissions(this,121,signed,scope)
+            val scopes=arrayOf(Scope(GoogleCloud.DRIVE_SCOPE),Scope(GoogleCloud.SHEETS_SCOPE))
+            if(!GoogleSignIn.hasPermissions(signed,*scopes)){
+                GoogleSignIn.requestPermissions(this,121,signed,*scopes)
             }else{
                 toast("Sincronizando con Google…")
                 google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
@@ -865,6 +944,23 @@ class MainActivity : Activity() {
             try{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)}
             catch(_:Exception){}
             photoChanged?.invoke(uri.toString());photoChanged=null;return
+        }
+        if(requestCode==160){
+            if(resultCode==RESULT_OK && data?.data!=null){
+                val uri=data.data!!
+                try{
+                    contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    val bitmap=contentResolver.openInputStream(uri)?.use{BitmapFactory.decodeStream(it)}
+                        ?:error("No se pudo leer el logo")
+                    val scaled=android.graphics.Bitmap.createScaledBitmap(bitmap,1,1,true)
+                    val pixel=scaled.getPixel(0,0)
+                    val accent=if(androidxColorLuminance(pixel)>0.93)0xff176d56.toInt() else pixel or 0xff000000.toInt()
+                    appearance.edit().putString("logo_uri",uri.toString()).putInt("logo_accent",accent).apply()
+                    toast("Logo guardado. Active colores del logo si desea usar su paleta.")
+                    render()
+                }catch(e:Exception){toast("No se pudo cargar el logo: "+e.message)}
+            }
+            return
         }
         if(requestCode==140){
             if(resultCode==RESULT_OK){
