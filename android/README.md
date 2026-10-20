@@ -34,7 +34,8 @@ Esta carpeta contiene una **aplicación Android nativa de prueba**, separada de 
    - SHA-1: **huella del certificado que firmó el APK instalado**.
 5. No es necesario incluir un client secret en el APK. Nunca agregues claves privadas ni tokens al repositorio.
 6. Instala el APK firmado con ese certificado y selecciona **Google → Entrar con Google**.
-7. Pulsa **Guardar registros en Google Sheets**. La aplicación intentará crear una hoja con Productos, Ventas, DetalleVentas, Clientes, Proveedores y Abonos, además de carpetas `NEXO POS/Imágenes/<categoría>` en Drive.
+7. Pulsa **Guardar registros en Google Sheets**. La aplicación creará una hoja con Productos, Ventas, DetalleVentas, Clientes, Proveedores y Abonos; subirá fotografías a `NEXO POS/Imágenes/<categoría>` y generará una copia JSON fechada en Drive.
+8. Para recuperar una copia, abre **Google → Recuperar copia de seguridad de Drive**. Confirma expresamente el reemplazo total de los datos locales. Prueba esta función con información ficticia antes de confiarle un negocio.
 
 **Atención a la firma de depuración:** GitHub puede crear un certificado debug distinto por ejecución. Una huella OAuth registrada para un APK no necesariamente funciona con un APK construido después. Para pruebas repetibles hay que configurar un keystore de firma estable en GitHub Secrets. Nunca publiques el keystore de una APK de producción.
 
@@ -42,10 +43,10 @@ Esta carpeta contiene una **aplicación Android nativa de prueba**, separada de 
 
 - Un solo teléfono / un usuario principal. Google Sheets es una **copia sincronizada**, no una base de datos transaccional compartida entre múltiples cajas.
 - Sin cronometraje automático de la sincronización; debes presionar «Guardar registros en Google Sheets».
-- Las fotos se suben a Drive por categorías, pero **aún falta implementar y verificar restauración completa de registros y fotos** en un teléfono nuevo.
+- La restauración de la copia JSON y fotografías está implementada; **todavía no se ha validado en un teléfono con una cuenta Google real**. No se debe confiar en ella hasta superar esa prueba.
 - Los recordatorios abren Google Calendar para confirmar; no se publican eventos sin tu consentimiento.
 - No se han implementado todos los módulos de la aplicación web anterior: libro mayor, compras complejas, facturación fiscal y múltiples sucursales siguen pendientes.
-- El primer APK no se debe usar aún para el cobro real. Es para comprobar pantallas, almacenamiento local, QR y primeros permisos Google.
+- El primer APK no se debe usar aún para el cobro real. Es para comprobar pantallas, almacenamiento local, QR, respaldo/restauración de pruebas y primeros permisos Google.
 - `GoogleSignIn` se usa provisionalmente para la prueba nativa; para una edición final se migrará a la API moderna Google Identity / Credential Manager.
 
 Para compilar localmente con Android SDK y Gradle 8.9:
