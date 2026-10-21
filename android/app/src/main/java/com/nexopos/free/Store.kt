@@ -150,6 +150,7 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,4){
         val specs=linkedMapOf(
             "Productos" to "SELECT id,name,category,barcode,cost,price,qty,photo,updated FROM products ORDER BY name",
             "Ventas" to "SELECT id,date,party_id,customer,method,total FROM sales ORDER BY date",
+            "MonedasVentas" to "SELECT id,sale_id,currency,received,rate,received_nio,change_nio FROM sale_currency ORDER BY rowid",
             "DetalleVentas" to "SELECT id,sale_id,product_id,name,qty,price,cost FROM lines ORDER BY rowid",
             "Clientes" to "SELECT id,type,name,phone,balance FROM parties WHERE type='cliente' ORDER BY name",
             "Proveedores" to "SELECT id,type,name,phone,balance FROM parties WHERE type='proveedor' ORDER BY name",
@@ -199,7 +200,7 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,4){
         val db=writableDatabase
         db.beginTransaction()
         try{
-            listOf("supplier_payments","cash_movements","cash_sessions","purchase_lines","product_suppliers",
+            listOf("sale_currency","supplier_payments","cash_movements","cash_sessions","purchase_lines","product_suppliers",
                 "purchases","business_settings","payments","lines","sales","parties","products").forEach{
                 db.execSQL("DELETE FROM "+it)
             }
@@ -242,6 +243,16 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,4){
                         else stmt.bindString(index+1,value)
                     }
                     stmt.executeInsert()
+                }
+            }
+            val currencyRows=tables["MonedasVentas"]
+            if(currencyRows!=null){
+                val expected=listOf("id","sale_id","currency","received","rate","received_nio","change_nio")
+                require(currencyRows.firstOrNull()==expected){"Historial de monedas incompatible"}
+                for(row in currencyRows.drop(1)){
+                    require(row.size==expected.size){"Registro de moneda incompleto"}
+                    db.execSQL("INSERT INTO sale_currency(id,sale_id,currency,received,rate,received_nio,change_nio) VALUES(?,?,?,?,?,?,?)",
+                        row.toTypedArray())
                 }
             }
             db.setTransactionSuccessful()
