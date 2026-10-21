@@ -830,12 +830,24 @@ class MainActivity : Activity() {
         val cost=field("Costo por unidad",numeric=true)
         val price=field("Precio de venta",numeric=true)
         val qty=field("Cantidad recibida","1",true)
+        val barcode=field("Código de barras (opcional)")
+        var selectedPhoto=""
+        val photoButton=btn("📷  Adjuntar fotografía (opcional)"){
+            photoChanged={uri->selectedPhoto=uri;toast("Foto agregada a la compra")}
+            val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{
+                addCategory(Intent.CATEGORY_OPENABLE);type="image/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+            startActivityForResult(intent,110)
+        }
         listOf("Nombre del producto" to name,"Categoría" to category,"Costo por unidad (C$)" to cost,"Precio de venta (C$, opcional)" to price,"Cantidad recibida" to qty).forEach{(label,input)->box.addView(info(label));box.addView(input)}
+        box.addView(info("Código de barras / SKU (opcional)"));box.addView(barcode)
+        box.addView(photoButton)
         AlertDialog.Builder(this).setTitle("Producto nuevo en la compra").setView(ScrollView(this).apply{addView(box)})
             .setNegativeButton("Cancelar",null).setPositiveButton("Añadir"){_,_->
                 try{
                     val item=PurchaseItem(null,name.text.toString().trim(),category.text.toString().trim(),
-                        qty.text.toString().toInt(),cents(cost.text.toString()),cents(price.text.toString()))
+                        qty.text.toString().toInt(),cents(cost.text.toString()),cents(price.text.toString()),barcode.text.toString().trim(),selectedPhoto)
                     require(item.name.length>=2&&item.qty>0&&item.cost>=0&&item.salePrice>=0){"Revise los datos"}
                     purchaseCart[UUID.randomUUID().toString()]=item
                     render()
