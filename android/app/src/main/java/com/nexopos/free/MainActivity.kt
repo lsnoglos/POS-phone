@@ -133,7 +133,18 @@ class MainActivity : Activity() {
     private fun row():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
     private fun btn(text:String,action:()->Unit):Button=Button(this).apply{
         this.text=text;textSize=13f;setAllCaps(false);setTextColor(accentText());minHeight=0;minimumHeight=0;includeFontPadding=false
-        background=GradientDrawable().apply{setColor(terracotta);cornerRadius=dp(14).toFloat()}
+        val shade=when{
+            text.contains("QR",true)||text.contains("Escanear",true)->0xff5265c9.toInt()
+            text.contains("Compra",true)||text.contains("mercancía",true)->0xff6546dc.toInt()
+            text.contains("Foto",true)||text.contains("galería",true)->0xffba3992.toInt()
+            text.contains("Editar",true)||text.contains("detalles",true)->0xff4262bd.toInt()
+            text.contains("Retiro",true)||text.contains("Cerrar",true)||text.contains("Quitar",true)->0xffc44c4c.toInt()
+            text.contains("PDF",true)||text.contains("etiquetas",true)->0xffb47719.toInt()
+            text.contains("Guardar",true)||text.contains("Registrar",true)||text.contains("Recibir",true)->0xff078d72.toInt()
+            else->terracotta
+        }
+        background=GradientDrawable().apply{setColor(shade);cornerRadius=dp(14).toFloat()}
+        setTextColor(Color.WHITE)
         setPadding(dp(10),dp(8),dp(10),dp(8))
         setOnClickListener{action()}
     }
