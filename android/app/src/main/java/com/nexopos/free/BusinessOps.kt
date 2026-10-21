@@ -44,7 +44,7 @@ class BusinessOps(private val store:Store){
         db.beginTransaction()
         try{
             values.forEach{(key,value)->
-                require(key in listOf("name","address","phone","tax_id","currency","credit_days","logo")){"Configuración no reconocida"}
+                require(key in listOf("name","address","phone","tax_id","currency","credit_days","logo","usd_buy","usd_sell")){"Configuración no reconocida"}
                 db.execSQL("INSERT OR REPLACE INTO business_settings(key,value) VALUES(?,?)",arrayOf(key,value.trim()))
             }
             db.setTransactionSuccessful()

@@ -64,6 +64,37 @@ class MainActivity : Activity() {
     private var pdfOptions=LabelPdf.Layout()
     private var google: GoogleCloud? = null
     private val appearance by lazy { getSharedPreferences("nexo_appearance",Context.MODE_PRIVATE) }
+    private val syncHandler=android.os.Handler(android.os.Looper.getMainLooper())
+    private var syncInProgress=false
+    private var syncStatus:TextView?=null
+    private val syncTask=object:Runnable{
+        override fun run(){
+            val minutes=appearance.getInt("sync_minutes",0)
+            if(minutes>=5){syncNow();syncHandler.postDelayed(this,minutes*60000L)}
+        }
+    }
+    private fun scheduleAutoSync(){
+        syncHandler.removeCallbacks(syncTask)
+        val minutes=appearance.getInt("sync_minutes",0)
+        if(minutes>=5)syncHandler.postDelayed(syncTask,minutes*60000L)
+    }
+    private fun syncNow(){
+        if(syncInProgress)return
+        val account=GoogleSignIn.getLastSignedInAccount(this)?:return
+        val scopes=arrayOf(Scope(GoogleCloud.DRIVE_SCOPE),Scope(GoogleCloud.SHEETS_SCOPE))
+        if(!GoogleSignIn.hasPermissions(account,*scopes))return
+        syncInProgress=true
+        syncStatus?.apply{text="Sincronizando con Google Sheets…";visibility=View.VISIBLE}
+        google?.pushToSheets(account,{result->
+            runOnUiThread{
+                syncInProgress=false
+                syncStatus?.apply{text=result;visibility=View.VISIBLE}
+            }
+        })
+    }
+    override fun onResume(){super.onResume();scheduleAutoSync()}
+    override fun onPause(){syncHandler.removeCallbacks(syncTask);super.onPause()}
+
     private fun lightTheme()=when(appearance.getString("theme","system")){
         "light"->true;"dark"->false;else->(resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)!=android.content.res.Configuration.UI_MODE_NIGHT_YES
     }
@@ -144,12 +175,27 @@ class MainActivity : Activity() {
             else->terracotta
         }
         background=GradientDrawable().apply{setColor(shade);cornerRadius=dp(14).toFloat()}
-        setTextColor(Color.WHITE)
-        setPadding(dp(10),dp(8),dp(10),dp(8))
+        setTextColor(if(androidxColorLuminance(shade)>0.47)Color.BLACK else Color.WHITE)
+        elevation=dp(1).toFloat()
+        setPadding(dp(12),dp(8),dp(12),dp(8))
         setOnClickListener{action()}
     }
     private fun addButton(where:LinearLayout,label:String,action:()->Unit){
         where.addView(btn(label,action),LinearLayout.LayoutParams(-1,dp(48)).apply{topMargin=dp(6)})
+    }
+    private fun themedAdapter(values:List<String>):ArrayAdapter<String>{
+        return object:ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,values){
+            override fun getView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return super.getView(position,convertView,parent).apply{
+                    (this as? TextView)?.apply{setTextColor(ink);setBackgroundColor(surface);setPadding(dp(12),dp(12),dp(8),dp(12))}
+                }
+            }
+            override fun getDropDownView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return super.getDropDownView(position,convertView,parent).apply{
+                    (this as? TextView)?.apply{setTextColor(ink);setBackgroundColor(surface);setPadding(dp(12),dp(12),dp(8),dp(12))}
+                }
+            }
+        }
     }
     private fun field(hint:String,value:String="",numeric:Boolean=false):EditText=EditText(this).apply{
         this.hint=hint;setText(value);textSize=16f;setSingleLine(true)
@@ -250,6 +296,13 @@ class MainActivity : Activity() {
         header.addView(identity,LinearLayout.LayoutParams(0,-2,1f))
         header.addView(btn("⚙"){showQuickSettings()},LinearLayout.LayoutParams(dp(48),dp(42)))
         root.addView(header)
+        syncStatus=TextView(this).apply{
+            text=if(syncInProgress)"Sincronizando con Google Sheets…" else ""
+            textSize=12f;setTextColor(if(lightTheme())0xff087f69.toInt() else 0xff9de9cf.toInt())
+            visibility=if(syncInProgress)View.VISIBLE else View.GONE
+            setPadding(dp(8),dp(2),dp(8),dp(4))
+        }
+        root.addView(syncStatus)
         val scroll=ScrollView(this)
         body=column().apply{setPadding(0,dp(4),0,dp(18))}
         scroll.addView(body)
@@ -260,6 +313,7 @@ class MainActivity : Activity() {
             "Inventario"->renderInventory()
             "Finanzas"->renderFinance()
             "Más"->renderMore()
+            "Cajeros"->renderCashiers()
             "Compra"->renderPurchase()
             "Caja"->renderCash()
             "Movimiento"->renderCashMovement()
@@ -273,12 +327,12 @@ class MainActivity : Activity() {
             "Configuración"->renderSettings()
             "Turnos"->renderCashHistory()
         }
-        if(appearance.getBoolean("ad_slot",false))root.addView(TextView(this).apply{text="Espacio publicitario · sin anuncios activos";textSize=11f;gravity=Gravity.CENTER;setTextColor(muted)},LinearLayout.LayoutParams(-1,dp(32)))
+
         val nav=row()
         val selected=when(tab){
             "Caja","Cierre","Movimiento","Turnos","Cobrar","Pagar"->"Finanzas"
             "Compra"->"Inicio"
-            "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
+            "Clientes","Proveedores","Historial","Google","Configuración","Cajeros"->"Más"
             else->tab
         }
         tabs.forEach{item->
@@ -289,7 +343,7 @@ class MainActivity : Activity() {
             else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(Color.TRANSPARENT)} }
             nav.addView(action,LinearLayout.LayoutParams(0,dp(66),1f).apply{rightMargin=dp(3)})
         }
-        root.addView(nav,LinearLayout.LayoutParams(-1,dp(46)))
+        root.addView(nav,LinearLayout.LayoutParams(-1,dp(68)))
     }
     private fun renderDashboard(){
         val summary=ops.summary()
@@ -359,7 +413,23 @@ class MainActivity : Activity() {
         body.addView(title("Más opciones",25f))
         navigate("Clientes","Directorio y datos de clientes","Clientes")
         navigate("Proveedores","Directorio de proveedores","Proveedores")
+        navigate("Cajeros","Registrar personal de caja y vendedores","Cajeros")
     }
+    private fun renderCashiers(){
+        body.addView(title("Cajeros y vendedores",24f))
+        body.addView(info("Registre a quienes pueden abrir un turno de caja."))
+        val name=field("Nombre completo")
+        val phone=field("Teléfono (opcional)")
+        body.addView(info("Nombre del cajero"));body.addView(name)
+        body.addView(info("Teléfono"));body.addView(phone)
+        addButton(body,"Registrar cajero"){
+            try{store.addCashier(name.text.toString(),phone.text.toString());render();toast("Cajero registrado")}
+            catch(e:Exception){toast(e.message?:"No se pudo registrar")}
+        }
+        store.cashiers().forEach{(_,label)->body.addView(navigateCashierRow(label))}
+    }
+    private fun navigateCashierRow(label:String):TextView=info("• "+label)
+
     private fun renderDebtors(type:String){
         body.addView(title(if(type=="cliente")"Cuentas por cobrar" else "Cuentas por pagar",24f))
         val pending=store.parties(type).filter{it.balance>0}
@@ -425,6 +495,7 @@ class MainActivity : Activity() {
                 if(qty<product.qty){cart[id]=qty+1;rememberCart();render()}
                 else toast("No hay más existencias")
             })
+            row.setPadding(dp(2),dp(6),dp(2),dp(6))
             selected.addView(row)
         }
         body.addView(selected)
@@ -470,26 +541,33 @@ class MainActivity : Activity() {
         body.addView(info("El carrito permanece guardado aunque cambie de pantalla o cierre accidentalmente la aplicación."))
     }
     private fun checkoutDialog(total:Long){
+        if(ops.openCash()==null){
+            AlertDialog.Builder(this).setTitle("Abra un turno de caja")
+                .setMessage("Antes de cobrar debe abrir caja e identificar al cajero. El carrito permanecerá guardado.")
+                .setNegativeButton("Seguir comprando",null)
+                .setPositiveButton("Abrir caja"){_,_->tab="Caja";render()}
+                .show()
+            return
+        }
         val form=column().apply{setPadding(dp(13),dp(8),dp(13),dp(6))}
         val customers=store.parties("cliente")
         form.addView(info("Cliente"))
         val customersSpinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,
-                listOf("Consumidor final")+customers.map{it.name})
+            adapter=themedAdapter(listOf("Consumidor final")+customers.map{it.name})
             setSelection((customers.indexOfFirst{it.id==chosenCustomer}+1).coerceAtLeast(0))
         }
         form.addView(customersSpinner)
         form.addView(info("Forma de pago"))
         val methods=listOf("Efectivo","Transferencia","Tarjeta","Fiado")
         val methodsSpinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,methods)
+            adapter=themedAdapter(methods)
             setSelection(methods.indexOf(chosenMethod).coerceAtLeast(0))
         }
         form.addView(methodsSpinner)
         form.addView(info("Moneda recibida"))
         val currencyOptions=listOf("Córdobas (C$)","Dólares (US$)")
         val currencySpinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,currencyOptions)
+            adapter=themedAdapter(currencyOptions)
         }
         form.addView(currencySpinner)
         form.addView(info("Cantidad entregada por el cliente"))
@@ -518,10 +596,13 @@ class MainActivity : Activity() {
             override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){updateChange()}
         }
         form.addView(info("El efectivo recibido se utiliza únicamente para calcular el cambio en pagos al contado."))
-        val dialog=AlertDialog.Builder(this).setTitle("Confirmar cobro · "+money(total))
+        val dialog=AlertDialog.Builder(this).setCustomTitle(title("Confirmar cobro · "+money(total),21f).apply{setPadding(dp(18),dp(14),dp(14),dp(8))})
             .setView(ScrollView(this).apply{addView(form)}).setNegativeButton("Cancelar",null)
             .setPositiveButton("Registrar venta",null).create()
         dialog.setOnShowListener{
+            dialog.window?.setBackgroundDrawable(ColorDrawable(surface))
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(if(lightTheme())0xff087f69.toInt() else 0xffa3edb7.toInt())
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(ink)
             dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
                 try{
@@ -890,10 +971,22 @@ class MainActivity : Activity() {
         val open=ops.openCash()
         if(open==null){
             body.addView(info("No hay un turno abierto. El fondo inicial no se registra como venta."))
+            val cashiers=store.cashiers()
+            if(cashiers.isEmpty()){
+                body.addView(info("Primero registre un cajero en Más → Cajeros."))
+                addButton(body,"Registrar cajero"){tab="Cajeros";render()}
+                return
+            }
+            body.addView(info("Cajero responsable"))
+            val cashierSpinner=Spinner(this).apply{
+                adapter=themedAdapter(cashiers.map{it.second})
+                setBackgroundColor(surface)
+            }
+            body.addView(cashierSpinner)
             val initial=field("Efectivo inicial C$","0",true)
             body.addView(initial)
             addButton(body,"Abrir caja"){
-                try{ops.startCash(cents(initial.text.toString()),GoogleSignIn.getLastSignedInAccount(this)?.email?:"Operador local");render();toast("Caja abierta")}
+                try{ops.startCash(cents(initial.text.toString()),cashiers[cashierSpinner.selectedItemPosition].second);render();toast("Caja abierta")}
                 catch(e:Exception){toast(e.message?:"Fondo inválido")}
             }
             return
@@ -1062,9 +1155,20 @@ class MainActivity : Activity() {
                 ops.saveSettings(data);render();toast("Configuración guardada localmente")
             }catch(e:Exception){toast(e.message?:"Datos inválidos")}
         }
-        body.addView(title("Publicidad",20f))
-        body.addView(info("La franja publicitaria es opcional. No se mostrarán anuncios hasta integrar un proveedor."))
-        addButton(body,if(appearance.getBoolean("ad_slot",false))"Ocultar espacio publicitario" else "Reservar espacio publicitario"){appearance.edit().putBoolean("ad_slot",!appearance.getBoolean("ad_slot",false)).apply();render()}
+        body.addView(title("Sincronización automática",20f))
+        body.addView(info("Intervalo mínimo: 5 minutos. Funciona mientras NEXO POS está abierta, con conexión y permisos de Google."))
+        val options=listOf("Desactivada","Cada 5 minutos","Cada 10 minutos","Cada 15 minutos","Cada 30 minutos","Cada 60 minutos")
+        val intervals=listOf(0,5,10,15,30,60)
+        val syncSpinner=Spinner(this).apply{
+            adapter=themedAdapter(options)
+            setSelection(intervals.indexOf(appearance.getInt("sync_minutes",0)).coerceAtLeast(0))
+        }
+        body.addView(syncSpinner)
+        addButton(body,"Guardar intervalo de sincronización"){
+            appearance.edit().putInt("sync_minutes",intervals[syncSpinner.selectedItemPosition]).apply()
+            scheduleAutoSync()
+            toast("Intervalo guardado")
+        }
         body.addView(title("Apariencia y marca",20f))
         addButton(body,"Seleccionar logo del negocio"){
             val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{

@@ -10,6 +10,8 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.View
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -52,6 +54,8 @@ class ContinuousScanActivity:Activity(){
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
         window.statusBarColor=dark
+        window.navigationBarColor=dark
+        window.decorView.systemUiVisibility=0
         db=Store(this)
         try{
             val raw=JSONObject(intent.getStringExtra("cart")?:"{}")
@@ -67,16 +71,26 @@ class ContinuousScanActivity:Activity(){
             setBackgroundColor(dark)
         }
         setContentView(root)
+        root.setOnApplyWindowInsetsListener{view,insets->
+            val bars=if(android.os.Build.VERSION.SDK_INT>=30)
+                insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            else null
+            val top=bars?.top ?: 0
+            val bottom=bars?.bottom ?: 0
+            view.setPadding(dp(12),dp(10)+top,dp(12),dp(12)+bottom)
+            insets
+        }
+        root.requestApplyInsets()
         root.addView(label("Escanear productos",24f).apply{typeface=Typeface.DEFAULT_BOLD})
         root.addView(label("El carrito permanece activo. Retire cada QR antes de volver a leerlo.",13f))
         scanner=DecoratedBarcodeView(this)
-        root.addView(scanner,LinearLayout.LayoutParams(-1,0,1.5f))
+        root.addView(scanner,LinearLayout.LayoutParams(-1,0,1.2f))
         message=label("Apunte la cámara a una etiqueta QR",14f)
         root.addView(message)
         val scroll=android.widget.ScrollView(this)
         cartText=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         scroll.addView(cartText)
-        root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
+        root.addView(scroll,LinearLayout.LayoutParams(-1,0,0.8f))
         val manual=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
         val code=EditText(this).apply{
             hint="Escribir código";setSingleLine(true);textSize=15f
@@ -87,7 +101,7 @@ class ContinuousScanActivity:Activity(){
         manual.addView(button("Añadir"){read(code.text.toString());code.text.clear()})
         root.addView(manual)
         root.addView(button("Volver a venta / cobrar"){finishWithCart()},
-            LinearLayout.LayoutParams(-1,dp(50)))
+            LinearLayout.LayoutParams(-1,dp(50)).apply{topMargin=dp(10)})
         scanner.decodeContinuous(object:BarcodeCallback{
             override fun barcodeResult(result:BarcodeResult){
                 val value=result.text?.trim()?:return
