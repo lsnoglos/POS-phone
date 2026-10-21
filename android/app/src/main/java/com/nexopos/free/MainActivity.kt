@@ -80,7 +80,7 @@ class MainActivity : Activity() {
         fun channel(v:Int):Double{val x=v/255.0;return if(x<=0.04045)x/12.92 else Math.pow((x+0.055)/1.055,2.4)}
         return 0.2126*channel(Color.red(color))+0.7152*channel(Color.green(color))+0.0722*channel(Color.blue(color))
     }
-    private val tabs = listOf("Inicio","Venta","Inventario","Finanzas","Más")
+    private val tabs = listOf("Inicio","Inventario","Finanzas","Más")
 
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
@@ -273,7 +273,7 @@ class MainActivity : Activity() {
         tabs.forEach{item->
             val action=btn(item){tab=item;render()}
             action.textSize=13f
-            action.text=mapOf("Inicio" to "⌂\nInicio","Venta" to "▣\nVenta","Inventario" to "▦\nInventario","Finanzas" to "▤\nFinanzas","Más" to "☷\nMás")[item]?:item
+            action.text=mapOf("Inicio" to "⌂\nInicio","Inventario" to "▦\nInventario","Finanzas" to "▤\nFinanzas","Más" to "☷\nMás")[item]?:item
             if(item==selected)action.setTextColor(accentText())
             else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(Color.TRANSPARENT)} }
             nav.addView(action,LinearLayout.LayoutParams(0,dp(66),1f).apply{rightMargin=dp(3)})
@@ -293,22 +293,28 @@ class MainActivity : Activity() {
         val actions=listOf(
             Triple("Nueva venta","Cobrar en el mostrador","Venta"),
             Triple("Compra de mercancía","Recibir productos y registrar factura","Compra"),
-            Triple("Movimiento del turno","Entradas y retiros de efectivo","Movimiento"),
-            Triple("Inventario","Productos, precios y existencias","Inventario"),
-            Triple("Cierre y arqueo","Contar efectivo y cerrar el turno","Cierre"))
-        actions.chunked(2).forEach{pair->
-            val line=row()
-            pair.forEach{(label,detail,dest)->
-                val item=card()
-                val palette=listOf(0xffe93c9c.toInt(),0xff6246ea.toInt(),0xff0eaa86.toInt(),0xfff49b36.toInt())
-                val color=palette[actions.indexOf(Triple(label,detail,dest)).coerceIn(0,3)]
-                item.background=GradientDrawable().apply{setColor(color);cornerRadius=dp(18).toFloat()}
-                item.addView(TextView(this).apply{text=label;textSize=18f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)})
-                item.addView(TextView(this).apply{text=detail;textSize=12f;setTextColor(Color.WHITE)})
-                item.setOnClickListener{tab=dest;render()}
-                line.addView(item,LinearLayout.LayoutParams(0,dp(114),1f).apply{rightMargin=dp(7)})
+            Triple("Movimiento del turno","Entradas y retiros de efectivo","Movimiento"))
+        actions.forEachIndexed{index,(label,detail,dest)->
+            val item=card()
+            val color=listOf(0xffe93c9c.toInt(),0xff6246ea.toInt(),0xff0eaa86.toInt())[index]
+            item.background=GradientDrawable().apply{setColor(color);cornerRadius=dp(18).toFloat()}
+            item.addView(TextView(this).apply{text=label;textSize=if(index==0)23f else 17f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)})
+            item.addView(TextView(this).apply{text=detail;textSize=13f;setTextColor(Color.WHITE)})
+            item.setOnClickListener{tab=dest;render()}
+            if(index==0)body.addView(item,LinearLayout.LayoutParams(-1,dp(140)).apply{bottomMargin=dp(10)})
+            else{
+                if(index==1){
+                    val line=row()
+                    line.addView(item,LinearLayout.LayoutParams(0,dp(118),1f).apply{rightMargin=dp(6)})
+                    val other=card()
+                    other.background=GradientDrawable().apply{setColor(0xff0eaa86.toInt());cornerRadius=dp(18).toFloat()}
+                    other.addView(TextView(this).apply{text=actions[2].first;textSize=17f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)})
+                    other.addView(TextView(this).apply{text=actions[2].second;textSize=13f;setTextColor(Color.WHITE)})
+                    other.setOnClickListener{tab="Movimiento";render()}
+                    line.addView(other,LinearLayout.LayoutParams(0,dp(118),1f))
+                    body.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})
+                }
             }
-            body.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(7)})
         }
         body.addView(title("Resumen",19f))
         listOf(
