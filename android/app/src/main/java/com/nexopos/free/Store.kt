@@ -13,7 +13,7 @@ data class Product(val id:String,val name:String,val category:String,val barcode
 data class Party(val id:String,val type:String,val name:String,val phone:String,val balance:Long)
 data class Sale(val id:String,val date:String,val customer:String,val method:String,val total:Long)
 
-class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
+class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,5){
     override fun onCreate(db:SQLiteDatabase){
         db.execSQL("CREATE TABLE products(id TEXT PRIMARY KEY,name TEXT NOT NULL,category TEXT NOT NULL,barcode TEXT NOT NULL,cost INTEGER NOT NULL,price INTEGER NOT NULL,qty INTEGER NOT NULL CHECK(qty>=0),photo TEXT NOT NULL,updated TEXT NOT NULL)")
         db.execSQL("CREATE TABLE parties(id TEXT PRIMARY KEY,type TEXT NOT NULL,name TEXT NOT NULL,phone TEXT NOT NULL,balance INTEGER NOT NULL DEFAULT 0)")
@@ -23,6 +23,8 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
         // Initial tables were kept compatible with version 1; add accounting extensions.
         db.execSQL("ALTER TABLE lines ADD COLUMN cost INTEGER NOT NULL DEFAULT 0")
         createExtraSchema(db)
+        createCurrencySchema(db)
+        createCashierSchema(db)
     }
     override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int){
         if(oldVersion<2){
@@ -30,6 +32,25 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
             createExtraSchema(db)
         }
         if(oldVersion<3)db.execSQL("ALTER TABLE cash_sessions ADD COLUMN operator TEXT NOT NULL DEFAULT 'No registrado'")
+        if(oldVersion<4)createCurrencySchema(db)
+        if(oldVersion<5)createCashierSchema(db)
+    }
+    private fun createCashierSchema(db:SQLiteDatabase){
+        db.execSQL("CREATE TABLE IF NOT EXISTS cashiers(id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',active INTEGER NOT NULL DEFAULT 1)")
+    }
+    @Synchronized fun cashiers():List<Pair<String,String>>{
+        val result=mutableListOf<Pair<String,String>>()
+        readableDatabase.rawQuery("SELECT id,name FROM cashiers WHERE active=1 ORDER BY name COLLATE NOCASE",null).use{c->
+            while(c.moveToNext())result.add(c.getString(0) to c.getString(1))
+        }
+        return result
+    }
+    @Synchronized fun addCashier(name:String,phone:String){
+        require(name.trim().length>=2){"Ingrese el nombre del cajero"}
+        writableDatabase.execSQL("INSERT INTO cashiers(id,name,phone) VALUES(?,?,?)",arrayOf(UUID.randomUUID().toString(),name.trim(),phone.trim()))
+    }
+    private fun createCurrencySchema(db:SQLiteDatabase){
+        db.execSQL("CREATE TABLE IF NOT EXISTS sale_currency(id TEXT PRIMARY KEY,sale_id TEXT NOT NULL UNIQUE,currency TEXT NOT NULL,received INTEGER NOT NULL,rate TEXT NOT NULL,received_nio INTEGER NOT NULL,change_nio INTEGER NOT NULL)")
     }
     private fun createExtraSchema(db:SQLiteDatabase){
         db.execSQL("CREATE TABLE IF NOT EXISTS purchases(id TEXT PRIMARY KEY,date TEXT NOT NULL,supplier_id TEXT,supplier_name TEXT NOT NULL,invoice TEXT NOT NULL,freight INTEGER NOT NULL,method TEXT NOT NULL,total INTEGER NOT NULL)")
@@ -87,9 +108,10 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
         return rows
     }
     /** Stock and sale commit atomically; no duplicate lines for repeated scans. */
-    @Synchronized fun charge(cart:Map<String,Int>,partyId:String?,method:String):Sale{
+    @Synchronized fun charge(cart:Map<String,Int>,partyId:String?,method:String,currency:String="NIO",received:Long=0L,rate:String="1",receivedNio:Long=0L,changeNio:Long=0L):Sale{
         require(cart.isNotEmpty()){"El carrito está vacío"}
         require(method in listOf("Efectivo","Transferencia","Tarjeta","Fiado"))
+        require(readableDatabase.rawQuery("SELECT id FROM cash_sessions WHERE closed IS NULL LIMIT 1",null).use{it.moveToFirst()}){"Debe abrir un turno de caja antes de vender"}
         val db=writableDatabase
         db.beginTransaction()
         try{
@@ -115,6 +137,12 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
                 db.execSQL("INSERT INTO lines(id,sale_id,product_id,name,qty,price,cost) VALUES(?,?,?,?,?,?,?)",
                     arrayOf(UUID.randomUUID().toString(),id,p.id,p.name,qty,p.price,p.cost))
             }
+            if(method=="Efectivo"){
+                require(currency in listOf("NIO","USD")){"Moneda inválida"}
+                require(received>=0 && receivedNio>=total && changeNio==receivedNio-total){"Importe o cambio inválido"}
+                db.execSQL("INSERT INTO sale_currency(id,sale_id,currency,received,rate,received_nio,change_nio) VALUES(?,?,?,?,?,?,?)",
+                    arrayOf(UUID.randomUUID().toString(),id,currency,received,rate,receivedNio,changeNio))
+            }
             if(method=="Fiado")db.execSQL("UPDATE parties SET balance=balance+? WHERE id=?",arrayOf(total,customer!!.id))
             if(method=="Efectivo")cashMovementInTransaction(db,"VENTA",total,"Venta al contado",id)
             db.setTransactionSuccessful()
@@ -139,6 +167,8 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
         val specs=linkedMapOf(
             "Productos" to "SELECT id,name,category,barcode,cost,price,qty,photo,updated FROM products ORDER BY name",
             "Ventas" to "SELECT id,date,party_id,customer,method,total FROM sales ORDER BY date",
+            "Cajeros" to "SELECT id,name,phone,active FROM cashiers ORDER BY name",
+            "MonedasVentas" to "SELECT id,sale_id,currency,received,rate,received_nio,change_nio FROM sale_currency ORDER BY rowid",
             "DetalleVentas" to "SELECT id,sale_id,product_id,name,qty,price,cost FROM lines ORDER BY rowid",
             "Clientes" to "SELECT id,type,name,phone,balance FROM parties WHERE type='cliente' ORDER BY name",
             "Proveedores" to "SELECT id,type,name,phone,balance FROM parties WHERE type='proveedor' ORDER BY name",
@@ -188,7 +218,7 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
         val db=writableDatabase
         db.beginTransaction()
         try{
-            listOf("supplier_payments","cash_movements","cash_sessions","purchase_lines","product_suppliers",
+            listOf("cashiers","sale_currency","supplier_payments","cash_movements","cash_sessions","purchase_lines","product_suppliers",
                 "purchases","business_settings","payments","lines","sales","parties","products").forEach{
                 db.execSQL("DELETE FROM "+it)
             }
@@ -231,6 +261,24 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,3){
                         else stmt.bindString(index+1,value)
                     }
                     stmt.executeInsert()
+                }
+            }
+            val cashierRows=tables["Cajeros"]
+            if(cashierRows!=null){
+                require(cashierRows.firstOrNull()==listOf("id","name","phone","active")){"Tabla de cajeros incompatible"}
+                for(row in cashierRows.drop(1)){
+                    require(row.size==4){"Datos de cajero incompletos"}
+                    db.execSQL("INSERT INTO cashiers(id,name,phone,active) VALUES(?,?,?,?)",row.toTypedArray())
+                }
+            }
+            val currencyRows=tables["MonedasVentas"]
+            if(currencyRows!=null){
+                val expected=listOf("id","sale_id","currency","received","rate","received_nio","change_nio")
+                require(currencyRows.firstOrNull()==expected){"Historial de monedas incompatible"}
+                for(row in currencyRows.drop(1)){
+                    require(row.size==expected.size){"Registro de moneda incompleto"}
+                    db.execSQL("INSERT INTO sale_currency(id,sale_id,currency,received,rate,received_nio,change_nio) VALUES(?,?,?,?,?,?,?)",
+                        row.toTypedArray())
                 }
             }
             db.setTransactionSuccessful()
