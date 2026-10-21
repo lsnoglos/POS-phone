@@ -1009,11 +1009,13 @@ class MainActivity : Activity() {
             Triple("phone","Teléfono",""),
             Triple("tax_id","Identificación fiscal (opcional)",""),
             Triple("currency","Moneda","NIO"),
-            Triple("credit_days","Días habituales de crédito","30"))
+            Triple("credit_days","Días habituales de crédito","30"),
+            Triple("usd_buy","Compra del dólar (C$ por US$1)","36.50"),
+            Triple("usd_sell","Venta del dólar (C$ por US$1)","37.00"))
         val inputs=linkedMapOf<String,EditText>()
         props.forEach{(key,hint,default)->
             body.addView(info(hint))
-            val box=field(hint,ops.setting(key,default),key=="credit_days")
+            val box=field(hint,ops.setting(key,default),key=="credit_days"||key=="usd_buy"||key=="usd_sell")
             inputs[key]=box
             body.addView(box)
         }
@@ -1022,6 +1024,9 @@ class MainActivity : Activity() {
                 val data=inputs.mapValues{it.value.text.toString()}
                 require(data.getValue("name").trim().isNotEmpty()){"Escriba el nombre comercial"}
                 require(data.getValue("credit_days").toIntOrNull() in 0..365){"Días de crédito inválidos"}
+                val buy=BigDecimal(data.getValue("usd_buy"))
+                val sell=BigDecimal(data.getValue("usd_sell"))
+                require(buy>BigDecimal.ZERO && sell>BigDecimal.ZERO && sell>=buy){"Revise las tasas de compra y venta del dólar"}
                 ops.saveSettings(data);render();toast("Configuración guardada localmente")
             }catch(e:Exception){toast(e.message?:"Datos inválidos")}
         }
