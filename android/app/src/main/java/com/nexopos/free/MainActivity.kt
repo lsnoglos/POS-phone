@@ -343,7 +343,7 @@ class MainActivity : Activity() {
             else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(Color.TRANSPARENT)} }
             nav.addView(action,LinearLayout.LayoutParams(0,dp(66),1f).apply{rightMargin=dp(3)})
         }
-        root.addView(nav,LinearLayout.LayoutParams(-1,dp(46)))
+        root.addView(nav,LinearLayout.LayoutParams(-1,dp(68)))
     }
     private fun renderDashboard(){
         val summary=ops.summary()
@@ -495,6 +495,7 @@ class MainActivity : Activity() {
                 if(qty<product.qty){cart[id]=qty+1;rememberCart();render()}
                 else toast("No hay más existencias")
             })
+            row.setPadding(dp(2),dp(6),dp(2),dp(6))
             selected.addView(row)
         }
         body.addView(selected)
