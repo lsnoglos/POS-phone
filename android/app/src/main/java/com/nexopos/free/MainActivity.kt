@@ -1136,17 +1136,31 @@ class MainActivity : Activity() {
         val copies=field("Copias por producto (1 a 50)",pdfOptions.copies.toString(),true)
         val margin=field("Margen en milímetros",pdfOptions.marginMm.toString(),true)
         val gap=field("Separación en milímetros",pdfOptions.gapMm.toString(),true)
-        listOf(cols,rows,copies,margin,gap).forEach{box.addView(it)}
-        val photos=CheckBox(this).apply{text="Incluir fotografía si existe";isChecked=pdfOptions.showPhoto;setTextColor(ink)}
-        val business=CheckBox(this).apply{text="Mostrar nombre del negocio";isChecked=pdfOptions.showBusiness;setTextColor(ink)}
+        listOf(
+            "Columnas" to cols,"Filas" to rows,"Copias por producto" to copies,
+            "Margen (mm)" to margin,"Separación (mm)" to gap
+        ).forEach{(label,input)->
+            val container=column()
+            val caption=TextView(this).apply{
+                text=label;textSize=13f;typeface=Typeface.DEFAULT_BOLD
+                setTextColor(if(lightTheme())0xff303b38.toInt() else Color.WHITE)
+                setPadding(dp(3),dp(8),0,dp(4))
+            }
+            container.addView(caption)
+            container.addView(input)
+            box.addView(container)
+        }
+
+        val photos=CheckBox(this).apply{text="Incluir fotografía si existe";isChecked=pdfOptions.showPhoto;setTextColor(if(lightTheme())ink else Color.WHITE);buttonTintList=android.content.res.ColorStateList.valueOf(if(lightTheme())0xff087e69.toInt() else 0xff85e6c8.toInt())}
+        val business=CheckBox(this).apply{text="Mostrar nombre del negocio";isChecked=pdfOptions.showBusiness;setTextColor(if(lightTheme())ink else Color.WHITE);buttonTintList=android.content.res.ColorStateList.valueOf(if(lightTheme())0xff087e69.toInt() else 0xff85e6c8.toInt())}
         box.addView(photos);box.addView(business)
         box.addView(title("Seleccionar productos",16f))
         val checkboxes=products.map{p->
-            CheckBox(this).apply{text=p.name+" · "+money(p.price);isChecked=true;setTextColor(ink)}
+            CheckBox(this).apply{text=p.name+" · "+money(p.price);isChecked=true;setTextColor(if(lightTheme())ink else Color.WHITE);buttonTintList=android.content.res.ColorStateList.valueOf(if(lightTheme())0xff087e69.toInt() else 0xff85e6c8.toInt())}
                 .also{box.addView(it)}
         }
         val scroll=ScrollView(this).apply{addView(box)}
-        val dialog=AlertDialog.Builder(this).setTitle("Etiquetas QR · hoja carta")
+        val dialog=AlertDialog.Builder(this,if(lightTheme())android.app.AlertDialog.THEME_DEVICE_DEFAULT_LIGHT else android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK).setTitle("Etiquetas QR · hoja carta")
             .setView(scroll).setNegativeButton("Cancelar",null)
             .setPositiveButton("Generar PDF",null).create()
         dialog.setOnShowListener{
