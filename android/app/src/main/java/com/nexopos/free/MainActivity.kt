@@ -617,9 +617,14 @@ class MainActivity : Activity() {
         body.addView(info("Seleccione proveedor y agregue mercancía. El inventario se actualizará al recibirla."))
         val suppliers=store.parties("proveedor")
         body.addView(info("Proveedor"))
-        val supplierSelect=Spinner(this)
-        supplierSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,
-            listOf("Sin proveedor")+suppliers.map{it.name})
+        val supplierSelect=Spinner(this).apply{
+            background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat();setStroke(dp(1),muted)}
+        }
+        val supplierNames=listOf("Seleccionar proveedor")+suppliers.map{it.name}
+        val supplierAdapter=ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,supplierNames).apply{
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        supplierSelect.adapter=supplierAdapter
         supplierSelect.setSelection((suppliers.indexOfFirst{it.id==purchaseSupplierId}+1).coerceAtLeast(0))
         supplierSelect.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
             override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
@@ -627,8 +632,11 @@ class MainActivity : Activity() {
                 purchaseSupplierId=if(position==0)null else suppliers[position-1].id
             }
         }
-        body.addView(supplierSelect,LinearLayout.LayoutParams(-1,dp(48)))
-        addButton(body,"+ Registrar proveedor sin salir de la compra"){partyDialog("proveedor")}
+        val supplierLine=row()
+        supplierLine.addView(supplierSelect,LinearLayout.LayoutParams(0,dp(52),1f))
+        supplierLine.addView(btn("+ Nuevo"){partyDialog("proveedor")},LinearLayout.LayoutParams(dp(104),dp(52)).apply{leftMargin=dp(8)})
+        body.addView(supplierLine)
+        body.addView(info("Proveedor seleccionado: "+(suppliers.firstOrNull{it.id==purchaseSupplierId}?.name?:"Ninguno")))
         if(purchaseSupplierId!=null){
             val associated=ops.supplierProducts(purchaseSupplierId!!)
             body.addView(info("Productos comprados anteriormente a este proveedor: "+associated.size))
