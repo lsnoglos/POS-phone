@@ -183,6 +183,20 @@ class MainActivity : Activity() {
     private fun addButton(where:LinearLayout,label:String,action:()->Unit){
         where.addView(btn(label,action),LinearLayout.LayoutParams(-1,dp(48)).apply{topMargin=dp(6)})
     }
+    private fun themedAdapter(values:List<String>):ArrayAdapter<String>{
+        return object:ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,values){
+            override fun getView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return super.getView(position,convertView,parent).apply{
+                    (this as? TextView)?.apply{setTextColor(ink);setBackgroundColor(surface);setPadding(dp(12),dp(12),dp(8),dp(12))}
+                }
+            }
+            override fun getDropDownView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return super.getDropDownView(position,convertView,parent).apply{
+                    (this as? TextView)?.apply{setTextColor(ink);setBackgroundColor(surface);setPadding(dp(12),dp(12),dp(8),dp(12))}
+                }
+            }
+        }
+    }
     private fun field(hint:String,value:String="",numeric:Boolean=false):EditText=EditText(this).apply{
         this.hint=hint;setText(value);textSize=16f;setSingleLine(true)
         setTextColor(ink);setHintTextColor(muted)
@@ -538,22 +552,21 @@ class MainActivity : Activity() {
         val customers=store.parties("cliente")
         form.addView(info("Cliente"))
         val customersSpinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,
-                listOf("Consumidor final")+customers.map{it.name})
+            adapter=themedAdapter(listOf("Consumidor final")+customers.map{it.name})
             setSelection((customers.indexOfFirst{it.id==chosenCustomer}+1).coerceAtLeast(0))
         }
         form.addView(customersSpinner)
         form.addView(info("Forma de pago"))
         val methods=listOf("Efectivo","Transferencia","Tarjeta","Fiado")
         val methodsSpinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,methods)
+            adapter=themedAdapter(methods)
             setSelection(methods.indexOf(chosenMethod).coerceAtLeast(0))
         }
         form.addView(methodsSpinner)
         form.addView(info("Moneda recibida"))
         val currencyOptions=listOf("Córdobas (C$)","Dólares (US$)")
         val currencySpinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,currencyOptions)
+            adapter=themedAdapter(currencyOptions)
         }
         form.addView(currencySpinner)
         form.addView(info("Cantidad entregada por el cliente"))
@@ -962,7 +975,7 @@ class MainActivity : Activity() {
             }
             body.addView(info("Cajero responsable"))
             val cashierSpinner=Spinner(this).apply{
-                adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,cashiers.map{it.second})
+                adapter=themedAdapter(cashiers.map{it.second})
                 setBackgroundColor(surface)
             }
             body.addView(cashierSpinner)
@@ -1143,7 +1156,7 @@ class MainActivity : Activity() {
         val options=listOf("Desactivada","Cada 5 minutos","Cada 10 minutos","Cada 15 minutos","Cada 30 minutos","Cada 60 minutos")
         val intervals=listOf(0,5,10,15,30,60)
         val syncSpinner=Spinner(this).apply{
-            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,options)
+            adapter=themedAdapter(options)
             setSelection(intervals.indexOf(appearance.getInt("sync_minutes",0)).coerceAtLeast(0))
         }
         body.addView(syncSpinner)
