@@ -111,6 +111,7 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,5){
     @Synchronized fun charge(cart:Map<String,Int>,partyId:String?,method:String,currency:String="NIO",received:Long=0L,rate:String="1",receivedNio:Long=0L,changeNio:Long=0L):Sale{
         require(cart.isNotEmpty()){"El carrito está vacío"}
         require(method in listOf("Efectivo","Transferencia","Tarjeta","Fiado"))
+        require(readableDatabase.rawQuery("SELECT id FROM cash_sessions WHERE closed IS NULL LIMIT 1",null).use{it.moveToFirst()}){"Debe abrir un turno de caja antes de vender"}
         val db=writableDatabase
         db.beginTransaction()
         try{
