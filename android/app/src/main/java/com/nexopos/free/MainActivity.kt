@@ -379,7 +379,10 @@ class MainActivity : Activity() {
     }
     private fun renderSale(){
         body.addView(title("Nueva venta",25f))
-        addButton(body,"▣  Escanear QR continuamente"){openScanner()}
+        val scan=btn("▣  Escanear QR continuamente"){openScanner()}
+        scan.background=GradientDrawable().apply{setColor(0xff5265c9.toInt());cornerRadius=dp(14).toFloat()}
+        scan.setTextColor(Color.WHITE)
+        body.addView(scan,LinearLayout.LayoutParams(-1,dp(52)).apply{bottomMargin=dp(8)})
         val search=field("Buscar producto, categoría, SKU o código",saleQuery)
         body.addView(search)
         body.addView(title("Carrito · "+cart.values.sum()+" artículos",20f))
@@ -415,10 +418,13 @@ class MainActivity : Activity() {
         }
         body.addView(selected)
         body.addView(title("Total: "+money(total),25f))
-        addButton(body,"Cobrar · "+money(total)){
+        val collect=btn("Cobrar · "+money(total)){
             if(cart.isEmpty())toast("Agregue productos al carrito")
             else checkoutDialog(total)
         }
+        collect.background=GradientDrawable().apply{setColor(0xff0e9476.toInt());cornerRadius=dp(14).toFloat()}
+        collect.setTextColor(Color.WHITE)
+        body.addView(collect,LinearLayout.LayoutParams(-1,dp(54)).apply{bottomMargin=dp(8)})
         body.addView(title("Catálogo de productos",18f))
         val catalog=column()
         body.addView(catalog)
@@ -640,8 +646,19 @@ class MainActivity : Activity() {
             background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat();setStroke(dp(1),muted)}
         }
         val supplierNames=listOf("Seleccionar proveedor")+suppliers.map{it.name}
-        val supplierAdapter=ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,supplierNames).apply{
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val supplierAdapter=object:ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,supplierNames){
+            override fun getView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return (super.getView(position,convertView,parent) as TextView).apply{
+                    setTextColor(ink);setPadding(dp(12),dp(9),dp(12),dp(9))
+                }
+            }
+            override fun getDropDownView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return (super.getDropDownView(position,convertView,parent) as TextView).apply{
+                    setTextColor(if(lightTheme())Color.BLACK else Color.WHITE)
+                    setBackgroundColor(if(lightTheme())Color.WHITE else 0xff303330.toInt())
+                    setPadding(dp(12),dp(13),dp(12),dp(13))
+                }
+            }
         }
         supplierSelect.adapter=supplierAdapter
         supplierSelect.setSelection((suppliers.indexOfFirst{it.id==purchaseSupplierId}+1).coerceAtLeast(0))
