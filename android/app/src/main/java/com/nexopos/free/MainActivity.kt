@@ -817,6 +817,68 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun renderCashMovement(){
+        body.addView(title("Movimiento del turno",24f))
+        val open=ops.openCash()
+        if(open==null){
+            body.addView(info("No hay un turno abierto."))
+            addButton(body,"Abrir turno"){tab="Caja";render()}
+            return
+        }
+        body.addView(info("Responsable: "+open.operator+" · Apertura: "+open.opened))
+        body.addView(stat("Efectivo esperado",money(open.expected)))
+        val amount=field("Importe en C$",numeric=true)
+        val reason=field("Motivo obligatorio")
+        body.addView(amount);body.addView(reason)
+        val actions=row()
+        listOf("Entrada" to false,"Salida" to true).forEach{(label,withdrawal)->
+            actions.addView(btn(label){
+                try{
+                    ops.cashMove(cents(amount.text.toString()),reason.text.toString(),withdrawal)
+                    render();toast("Movimiento registrado")
+                }catch(e:Exception){toast(e.message?:"No se pudo registrar")}
+            },LinearLayout.LayoutParams(0,dp(48),1f).apply{rightMargin=dp(7)})
+        }
+        body.addView(actions)
+        body.addView(title("Movimientos del turno",18f))
+        ops.cashMoves().forEach{body.addView(info(it.date+" · "+it.kind+" · "+money(it.amount)+" · "+it.note))}
+    }
+    private fun renderCashClosing(){
+        body.addView(title("Cierre y arqueo",24f))
+        val open=ops.openCash()
+        if(open==null){
+            body.addView(info("No hay un turno abierto para cerrar."))
+            addButton(body,"Abrir turno"){tab="Caja";render()}
+            addButton(body,"Ver historial de turnos"){tab="Turnos";render()}
+            return
+        }
+        body.addView(info("Responsable: "+open.operator+" · Apertura: "+open.opened))
+        body.addView(stat("Fondo inicial",money(open.opening)))
+        val moves=ops.cashMoves(open.id)
+        val received=moves.filter{it.amount>0}.sumOf{it.amount}
+        val withdrawn=moves.filter{it.amount<0}.sumOf{-it.amount}
+        body.addView(stat("Entradas, incluidas ventas en efectivo",money(received)))
+        body.addView(stat("Salidas y retiros",money(withdrawn)))
+        body.addView(stat("Efectivo esperado",money(open.expected)))
+        body.addView(title("Detalle de movimientos",18f))
+        moves.forEach{body.addView(info(it.date+" · "+it.kind+" · "+money(it.amount)+" · "+it.note))}
+        val count=field("Efectivo contado en caja C$",numeric=true)
+        body.addView(count)
+        addButton(body,"Revisar y cerrar turno"){
+            try{
+                val counted=cents(count.text.toString())
+                AlertDialog.Builder(this).setTitle("Confirmar cierre")
+                    .setMessage("Inicial: "+money(open.opening)+"\nEntradas: "+money(received)+
+                        "\nSalidas: "+money(withdrawn)+"\nEsperado: "+money(open.expected)+
+                        "\nContado: "+money(counted)+"\nDiferencia: "+money(counted-open.expected))
+                    .setNegativeButton("Cancelar",null)
+                    .setPositiveButton("Cerrar turno"){_,_->
+                        try{ops.closeCash(counted);tab="Finanzas";render();toast("Turno cerrado")}
+                        catch(e:Exception){toast(e.message?:"No se pudo cerrar")}
+                    }.show()
+            }catch(e:Exception){toast("Ingrese el efectivo contado")}
+        }
+    }
     private fun renderCashHistory(){
         body.addView(title("Historial de turnos de caja",24f))
         val sessions=ops.cashHistory()
