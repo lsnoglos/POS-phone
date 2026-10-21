@@ -595,10 +595,13 @@ class MainActivity : Activity() {
             override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){updateChange()}
         }
         form.addView(info("El efectivo recibido se utiliza únicamente para calcular el cambio en pagos al contado."))
-        val dialog=AlertDialog.Builder(this).setTitle("Confirmar cobro · "+money(total))
+        val dialog=AlertDialog.Builder(this).setCustomTitle(title("Confirmar cobro · "+money(total),21f).apply{setPadding(dp(18),dp(14),dp(14),dp(8))})
             .setView(ScrollView(this).apply{addView(form)}).setNegativeButton("Cancelar",null)
             .setPositiveButton("Registrar venta",null).create()
         dialog.setOnShowListener{
+            dialog.window?.setBackgroundDrawable(ColorDrawable(surface))
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(if(lightTheme())0xff087f69.toInt() else 0xffa3edb7.toInt())
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(ink)
             dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
                 try{
