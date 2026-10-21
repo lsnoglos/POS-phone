@@ -1037,8 +1037,7 @@ class MainActivity : Activity() {
             setPadding(0,dp(6),0,dp(8))
         })
         val sha=installedSha1()
-        body.addView(info("Identificador de la aplicación: "+packageName))
-        body.addView(info("SHA-1 de este APK: "+sha))
+
         addButton(body,"☁  Hacer copia de seguridad en Google Sheets"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
@@ -1070,6 +1069,20 @@ class MainActivity : Activity() {
                     }
                 }.show()
         }
+        val copySha=TextView(this).apply{
+            text="Copiar dato SHA-1";textSize=12f;setTextColor(0xff1976d2.toInt())
+            setPadding(dp(8),dp(20),dp(8),dp(16))
+            setOnClickListener{
+                (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("SHA-1 NEXO POS",sha))
+                toast("SHA-1 copiado")
+            }
+        }
+        body.addView(copySha)
+        val logout=btn("Cerrar sesión"){signOutSafely()}
+        logout.setTextColor(Color.WHITE)
+        logout.background=GradientDrawable().apply{setColor(0xffc62828.toInt());cornerRadius=dp(14).toFloat()}
+        body.addView(logout,LinearLayout.LayoutParams(-1,dp(48)))
         body.addView(info("Google Sheets: productos, ventas, detalle de ventas, clientes, proveedores y abonos."))
         body.addView(info("Google Calendar: desde Clientes puede preparar recordatorios de cobros, confirmándolos en su calendario."))
         body.addView(info("El teléfono conserva sus datos sin conexión. Sincronizar crea una copia JSON restaurable en Drive y actualiza la hoja de cálculo."))
@@ -1233,4 +1246,16 @@ class MainActivity : Activity() {
             tab="Venta";render()
         }
     }
+    @Deprecated("Android back navigation")
+    override fun onBackPressed(){
+        val target=when(tab){
+            "Compra","Movimiento"->"Inicio"
+            "Cierre","Caja","Turnos","Cobrar","Pagar"->"Finanzas"
+            "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
+            "Venta","Inventario","Finanzas","Más"->"Inicio"
+            else->null
+        }
+        if(target!=null){tab=target;render()}else super.onBackPressed()
+    }
+
 }
