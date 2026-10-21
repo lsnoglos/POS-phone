@@ -475,20 +475,50 @@ class MainActivity : Activity() {
             setSelection(methods.indexOf(chosenMethod).coerceAtLeast(0))
         }
         form.addView(methodsSpinner)
-        val received=field("Efectivo recibido",BigDecimal.valueOf(total,2).toPlainString(),true)
+        form.addView(info("Moneda recibida"))
+        val currencyOptions=listOf("Córdobas (C$)","Dólares (US$)")
+        val currencySpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,currencyOptions)
+        }
+        form.addView(currencySpinner)
+        form.addView(info("Cantidad entregada por el cliente"))
+        val received=field("Cantidad recibida",BigDecimal.valueOf(total,2).toPlainString(),true)
         form.addView(received)
+        val changePreview=title("Cambio: C$0.00",18f)
+        form.addView(changePreview)
+        fun paidInCordobas():Long{
+            val receivedCents=cents(received.text.toString())
+            val rate=if(currencySpinner.selectedItemPosition==1)
+                BigDecimal(ops.setting("usd_buy","36.50")) else BigDecimal.ONE
+            require(rate>BigDecimal.ZERO){"La tasa de compra del dólar debe ser positiva"}
+            return BigDecimal.valueOf(receivedCents).multiply(rate)
+                .setScale(0,RoundingMode.HALF_UP).longValueExact()
+        }
+        fun updateChange(){
+            try{
+                val diff=paidInCordobas()-total
+                changePreview.text=if(diff>=0)"Cambio: "+money(diff) else "Faltan: "+money(-diff)
+                changePreview.setTextColor(if(diff>=0)0xff0b9676.toInt() else 0xffd13d4e.toInt())
+            }catch(_:Exception){changePreview.text="Ingrese un monto válido"}
+        }
+        received.addTextChangedListener(simpleWatcher{updateChange()})
+        currencySpinner.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){updateChange()}
+        }
         form.addView(info("El efectivo recibido se utiliza únicamente para calcular el cambio en pagos al contado."))
         val dialog=AlertDialog.Builder(this).setTitle("Confirmar cobro · "+money(total))
-            .setView(form).setNegativeButton("Cancelar",null)
+            .setView(ScrollView(this).apply{addView(form)}).setNegativeButton("Cancelar",null)
             .setPositiveButton("Registrar venta",null).create()
         dialog.setOnShowListener{
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
                 try{
                     val customerIndex=customersSpinner.selectedItemPosition
                     val customerId=if(customerIndex==0)null else customers[customerIndex-1].id
                     val payment=methods[methodsSpinner.selectedItemPosition]
                     if(payment=="Fiado")require(customerId!=null){"Seleccione un cliente registrado para fiar"}
-                    val paid=if(payment=="Efectivo")cents(received.text.toString()) else total
+                    val paid=if(payment=="Efectivo")paidInCordobas() else total
                     require(paid>=total){"El efectivo recibido es insuficiente"}
                     val saved=store.charge(cart.toMap(),customerId,payment)
                     val change=if(payment=="Efectivo")paid-total else 0L
@@ -548,11 +578,12 @@ class MainActivity : Activity() {
         val cost=field("Precio del proveedor",existing?.let{BigDecimal.valueOf(it.cost,2).toPlainString()}?:"",true)
         val price=field("Precio de venta",existing?.let{BigDecimal.valueOf(it.price,2).toPlainString()}?:"",true)
         val qty=field("Cantidad en inventario",existing?.qty?.toString()?:"0",true)
-        listOf(name,cost,price,qty).forEach{wrapper.addView(it)}
+        listOf("Nombre del producto" to name,"Costo por unidad (C$)" to cost,"Precio de venta (C$)" to price,"Cantidad en inventario" to qty).forEach{(label,input)->wrapper.addView(info(label));wrapper.addView(input)}
         val detail=column()
         val category=field("Categoría",existing?.category?:"")
         val barcode=field("Código de barras (opcional)",existing?.barcode?:"")
-        detail.addView(category);detail.addView(barcode)
+        detail.addView(info("Categoría"));detail.addView(category)
+        detail.addView(info("Código de barras (opcional)"));detail.addView(barcode)
         detail.visibility=View.GONE
         wrapper.addView(btn("Más detalles  ▾"){detail.visibility=if(detail.visibility==View.VISIBLE)View.GONE else View.VISIBLE})
         wrapper.addView(detail)
@@ -730,9 +761,11 @@ class MainActivity : Activity() {
         val invoice=field("Número de factura o referencia",purchaseInvoice)
         invoice.addTextChangedListener(simpleWatcher{purchaseInvoice=it})
         body.addView(invoice)
+        body.addView(info("Flete: costo de transporte de esta mercancía en C$. Escriba 0 si no hubo transporte."))
         val freight=field("Flete C$",purchaseFreight,true)
         freight.addTextChangedListener(simpleWatcher{purchaseFreight=it})
         body.addView(freight)
+        body.addView(info("Forma de pago: Contado descuenta el pago; Crédito deja una deuda pendiente al proveedor."))
         val methods=listOf("Contado","Crédito")
         val methodSelect=Spinner(this)
         methodSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,methods)
@@ -791,8 +824,8 @@ class MainActivity : Activity() {
         val cost=field("Costo por unidad",numeric=true)
         val price=field("Precio de venta",numeric=true)
         val qty=field("Cantidad recibida","1",true)
-        listOf(name,category,cost,price,qty).forEach{box.addView(it)}
-        AlertDialog.Builder(this).setTitle("Producto nuevo en la compra").setView(box)
+        listOf("Nombre del producto" to name,"Categoría" to category,"Costo por unidad (C$)" to cost,"Precio de venta (C$, opcional)" to price,"Cantidad recibida" to qty).forEach{(label,input)->box.addView(info(label));box.addView(input)}
+        AlertDialog.Builder(this).setTitle("Producto nuevo en la compra").setView(ScrollView(this).apply{addView(box)})
             .setNegativeButton("Cancelar",null).setPositiveButton("Añadir"){_,_->
                 try{
                     val item=PurchaseItem(null,name.text.toString().trim(),category.text.toString().trim(),
@@ -809,8 +842,8 @@ class MainActivity : Activity() {
         val qty=field("Cantidad",item.qty.toString(),true)
         val cost=field("Costo unitario",BigDecimal.valueOf(item.cost,2).toPlainString(),true)
         val price=field("Precio venta",BigDecimal.valueOf(item.salePrice,2).toPlainString(),true)
-        listOf(qty,cost,price).forEach{box.addView(it)}
-        AlertDialog.Builder(this).setTitle(item.name).setView(box)
+        listOf("Cantidad de unidades" to qty,"Costo unitario (C$)" to cost,"Precio de venta (C$)" to price).forEach{(label,input)->box.addView(info(label));box.addView(input)}
+        AlertDialog.Builder(this).setTitle(item.name).setView(ScrollView(this).apply{addView(box)})
             .setNegativeButton("Cancelar",null).setPositiveButton("Aplicar"){_,_->
                 try{
                     val q=qty.text.toString().toInt()
@@ -979,11 +1012,13 @@ class MainActivity : Activity() {
             Triple("phone","Teléfono",""),
             Triple("tax_id","Identificación fiscal (opcional)",""),
             Triple("currency","Moneda","NIO"),
-            Triple("credit_days","Días habituales de crédito","30"))
+            Triple("credit_days","Días habituales de crédito","30"),
+            Triple("usd_buy","Compra del dólar (C$ por US$1)","36.50"),
+            Triple("usd_sell","Venta del dólar (C$ por US$1)","37.00"))
         val inputs=linkedMapOf<String,EditText>()
         props.forEach{(key,hint,default)->
             body.addView(info(hint))
-            val box=field(hint,ops.setting(key,default),key=="credit_days")
+            val box=field(hint,ops.setting(key,default),key=="credit_days"||key=="usd_buy"||key=="usd_sell")
             inputs[key]=box
             body.addView(box)
         }
@@ -992,6 +1027,9 @@ class MainActivity : Activity() {
                 val data=inputs.mapValues{it.value.text.toString()}
                 require(data.getValue("name").trim().isNotEmpty()){"Escriba el nombre comercial"}
                 require(data.getValue("credit_days").toIntOrNull() in 0..365){"Días de crédito inválidos"}
+                val buy=BigDecimal(data.getValue("usd_buy"))
+                val sell=BigDecimal(data.getValue("usd_sell"))
+                require(buy>BigDecimal.ZERO && sell>BigDecimal.ZERO && sell>=buy){"Revise las tasas de compra y venta del dólar"}
                 ops.saveSettings(data);render();toast("Configuración guardada localmente")
             }catch(e:Exception){toast(e.message?:"Datos inválidos")}
         }
