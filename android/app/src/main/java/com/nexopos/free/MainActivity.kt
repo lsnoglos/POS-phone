@@ -260,6 +260,7 @@ class MainActivity : Activity() {
             "Inventario"->renderInventory()
             "Finanzas"->renderFinance()
             "Más"->renderMore()
+            "Cajeros"->renderCashiers()
             "Compra"->renderPurchase()
             "Caja"->renderCash()
             "Movimiento"->renderCashMovement()
@@ -359,7 +360,23 @@ class MainActivity : Activity() {
         body.addView(title("Más opciones",25f))
         navigate("Clientes","Directorio y datos de clientes","Clientes")
         navigate("Proveedores","Directorio de proveedores","Proveedores")
+        navigate("Cajeros","Registrar personal de caja y vendedores","Cajeros")
     }
+    private fun renderCashiers(){
+        body.addView(title("Cajeros y vendedores",24f))
+        body.addView(info("Registre a quienes pueden abrir un turno de caja."))
+        val name=field("Nombre completo")
+        val phone=field("Teléfono (opcional)")
+        body.addView(info("Nombre del cajero"));body.addView(name)
+        body.addView(info("Teléfono"));body.addView(phone)
+        addButton(body,"Registrar cajero"){
+            try{store.addCashier(name.text.toString(),phone.text.toString());render();toast("Cajero registrado")}
+            catch(e:Exception){toast(e.message?:"No se pudo registrar")}
+        }
+        store.cashiers().forEach{(_,label)->body.addView(navigateCashierRow(label))}
+    }
+    private fun navigateCashierRow(label:String):TextView=info("• "+label)
+
     private fun renderDebtors(type:String){
         body.addView(title(if(type=="cliente")"Cuentas por cobrar" else "Cuentas por pagar",24f))
         val pending=store.parties(type).filter{it.balance>0}
