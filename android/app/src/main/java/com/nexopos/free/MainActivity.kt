@@ -487,6 +487,14 @@ class MainActivity : Activity() {
         body.addView(info("El carrito permanece guardado aunque cambie de pantalla o cierre accidentalmente la aplicación."))
     }
     private fun checkoutDialog(total:Long){
+        if(ops.openCash()==null){
+            AlertDialog.Builder(this).setTitle("Abra un turno de caja")
+                .setMessage("Antes de cobrar debe abrir caja e identificar al cajero. El carrito permanecerá guardado.")
+                .setNegativeButton("Seguir comprando",null)
+                .setPositiveButton("Abrir caja"){_,_->tab="Caja";render()}
+                .show()
+            return
+        }
         val form=column().apply{setPadding(dp(13),dp(8),dp(13),dp(6))}
         val customers=store.parties("cliente")
         form.addView(info("Cliente"))
@@ -907,10 +915,22 @@ class MainActivity : Activity() {
         val open=ops.openCash()
         if(open==null){
             body.addView(info("No hay un turno abierto. El fondo inicial no se registra como venta."))
+            val cashiers=store.cashiers()
+            if(cashiers.isEmpty()){
+                body.addView(info("Primero registre un cajero en Más → Cajeros."))
+                addButton(body,"Registrar cajero"){tab="Cajeros";render()}
+                return
+            }
+            body.addView(info("Cajero responsable"))
+            val cashierSpinner=Spinner(this).apply{
+                adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,cashiers.map{it.second})
+                setBackgroundColor(surface)
+            }
+            body.addView(cashierSpinner)
             val initial=field("Efectivo inicial C$","0",true)
             body.addView(initial)
             addButton(body,"Abrir caja"){
-                try{ops.startCash(cents(initial.text.toString()),GoogleSignIn.getLastSignedInAccount(this)?.email?:"Operador local");render();toast("Caja abierta")}
+                try{ops.startCash(cents(initial.text.toString()),cashiers[cashierSpinner.selectedItemPosition].second);render();toast("Caja abierta")}
                 catch(e:Exception){toast(e.message?:"Fondo inválido")}
             }
             return
