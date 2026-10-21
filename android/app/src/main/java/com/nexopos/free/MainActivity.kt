@@ -164,8 +164,30 @@ class MainActivity : Activity() {
     private fun stat(label:String,value:String):LinearLayout=card().apply{
         addView(info(label));addView(title(value,20f))
     }
+    private fun launchGoogleLogin(){
+        val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
+        startActivityForResult(GoogleSignIn.getClient(this,options).signInIntent,120)
+    }
+    private fun renderLoginGate(){
+        val page=column().apply{gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(22),dp(65),dp(22),dp(24))}
+        page.addView(TextView(this).apply{text="NEXO POS";textSize=36f;typeface=Typeface.DEFAULT_BOLD;gravity=Gravity.CENTER;setTextColor(terracotta)},LinearLayout.LayoutParams(-1,dp(110)))
+        page.addView(TextView(this).apply{text="Tu negocio, en buenas manos";textSize=18f;gravity=Gravity.CENTER;setTextColor(ink)})
+        page.addView(TextView(this).apply{text="Inicia sesión para acceder a tus datos. Los registros de una cuenta no deben compartirse con otra.";textSize=15f;gravity=Gravity.CENTER;setTextColor(muted);setPadding(0,dp(28),0,dp(30))})
+        addButton(page,"Continuar con Google"){launchGoogleLogin()}
+        root.addView(page,LinearLayout.LayoutParams(-1,-1))
+    }
+    private fun offerCloudRestore(){
+        AlertDialog.Builder(this).setTitle("¿Recuperar datos de Google Drive?")
+            .setMessage("Puedes recuperar la copia completa guardada en Drive. La restauración actual reemplaza todos los datos locales; todavía no permite seleccionar categorías.")
+            .setNegativeButton("Ahora no",null)
+            .setPositiveButton("Revisar respaldo"){_,_->tab="Google";render()}
+            .show()
+    }
     private fun render(){
         root.removeAllViews()
+        val signedEmail=GoogleSignIn.getLastSignedInAccount(this)?.email
+        val ownerEmail=getSharedPreferences("nexo_google",Context.MODE_PRIVATE).getString("owner_email",null)
+        if(signedEmail==null || (ownerEmail!=null && !ownerEmail.equals(signedEmail,ignoreCase=true))){renderLoginGate();return}
         val currentName=ops.setting("name","La pulpe")
         root.setBackgroundColor(cream)
         window.statusBarColor=cream
@@ -223,11 +245,11 @@ class MainActivity : Activity() {
         }
         tabs.forEach{item->
             val action=btn(item){tab=item;render()}
-            action.textSize=11f
+            action.textSize=13f
             action.text=mapOf("Inicio" to "⌂\nInicio","Venta" to "▣\nVenta","Inventario" to "▦\nInventario","Finanzas" to "▤\nFinanzas","Más" to "☷\nMás")[item]?:item
             if(item==selected)action.setTextColor(accentText())
-            else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat()} }
-            nav.addView(action,LinearLayout.LayoutParams(0,dp(49),1f).apply{rightMargin=dp(3)})
+            else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(Color.TRANSPARENT)} }
+            nav.addView(action,LinearLayout.LayoutParams(0,dp(66),1f).apply{rightMargin=dp(3)})
         }
         root.addView(nav,LinearLayout.LayoutParams(-1,dp(46)))
     }
@@ -235,9 +257,9 @@ class MainActivity : Activity() {
         val summary=ops.summary()
         body.addView(title("Panel de tu negocio",25f))
         val hero=card().apply{
-            background=GradientDrawable().apply{setColor(0xff513822.toInt());cornerRadius=dp(17).toFloat()}
-            addView(info("Ventas de hoy"));addView(title(money(summary.today),30f))
-            addView(info("Ayer "+money(summary.yesterday)+" · Semana "+money(summary.week)))
+            background=GradientDrawable().apply{setColor(if(lightTheme())0xffdff4ea.toInt() else 0xff204d42.toInt());cornerRadius=dp(17).toFloat()}
+            addView(TextView(this@MainActivity).apply{text="Ventas de hoy";setTextColor(ink);textSize=14f});addView(TextView(this@MainActivity).apply{text=money(summary.today);setTextColor(ink);textSize=30f;typeface=Typeface.DEFAULT_BOLD})
+            addView(TextView(this@MainActivity).apply{text="Ayer "+money(summary.yesterday)+" · Semana "+money(summary.week);setTextColor(muted);textSize=13f})
         }
         body.addView(hero)
         body.addView(title("Accesos rápidos",19f))
@@ -780,7 +802,7 @@ class MainActivity : Activity() {
                     0->{tab="Configuración";render()}
                     1,2->{tab="Google";render();if(choice==1)toast("Pulse Guardar registros en Google Sheets")}
                     3->AlertDialog.Builder(this).setTitle("Cerrar sesión de Google")
-                        .setMessage("Los datos locales se conservan en este teléfono.")
+                        .setMessage("Antes de cerrar sesión, guarda una copia en Google Drive. Los datos locales quedarán bloqueados, pero no se borrarán automáticamente para evitar perder cambios sin respaldo. Otra cuenta no podrá acceder a este negocio.")
                         .setNegativeButton("Cancelar",null)
                         .setPositiveButton("Cerrar sesión"){_,_->
                             val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
@@ -1062,6 +1084,7 @@ class MainActivity : Activity() {
                 }else{
                     prefs.edit().putString("owner_email",email).apply()
                     toast("Google conectado: "+email)
+                    offerCloudRestore()
                 }
                 render()
             }catch(e:ApiException){
