@@ -282,6 +282,13 @@ class MainActivity : Activity() {
         header.addView(identity,LinearLayout.LayoutParams(0,-2,1f))
         header.addView(btn("⚙"){showQuickSettings()},LinearLayout.LayoutParams(dp(48),dp(42)))
         root.addView(header)
+        syncStatus=TextView(this).apply{
+            text=if(syncInProgress)"Sincronizando con Google Sheets…" else ""
+            textSize=12f;setTextColor(if(lightTheme())0xff087f69.toInt() else 0xff9de9cf.toInt())
+            visibility=if(syncInProgress)View.VISIBLE else View.GONE
+            setPadding(dp(8),dp(2),dp(8),dp(4))
+        }
+        root.addView(syncStatus)
         val scroll=ScrollView(this)
         body=column().apply{setPadding(0,dp(4),0,dp(18))}
         scroll.addView(body)
@@ -1130,6 +1137,20 @@ class MainActivity : Activity() {
                 require(buy>BigDecimal.ZERO && sell>BigDecimal.ZERO && sell>=buy){"Revise las tasas de compra y venta del dólar"}
                 ops.saveSettings(data);render();toast("Configuración guardada localmente")
             }catch(e:Exception){toast(e.message?:"Datos inválidos")}
+        }
+        body.addView(title("Sincronización automática",20f))
+        body.addView(info("Intervalo mínimo: 5 minutos. Funciona mientras NEXO POS está abierta, con conexión y permisos de Google."))
+        val options=listOf("Desactivada","Cada 5 minutos","Cada 10 minutos","Cada 15 minutos","Cada 30 minutos","Cada 60 minutos")
+        val intervals=listOf(0,5,10,15,30,60)
+        val syncSpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,options)
+            setSelection(intervals.indexOf(appearance.getInt("sync_minutes",0)).coerceAtLeast(0))
+        }
+        body.addView(syncSpinner)
+        addButton(body,"Guardar intervalo de sincronización"){
+            appearance.edit().putInt("sync_minutes",intervals[syncSpinner.selectedItemPosition]).apply()
+            scheduleAutoSync()
+            toast("Intervalo guardado")
         }
         body.addView(title("Apariencia y marca",20f))
         addButton(body,"Seleccionar logo del negocio"){
