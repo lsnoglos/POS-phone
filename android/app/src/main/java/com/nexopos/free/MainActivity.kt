@@ -251,6 +251,10 @@ class MainActivity : Activity() {
             "Más"->renderMore()
             "Compra"->renderPurchase()
             "Caja"->renderCash()
+            "Movimiento"->renderCashMovement()
+            "Cierre"->renderCashClosing()
+            "Cobrar"->renderDebtors("cliente")
+            "Pagar"->renderDebtors("proveedor")
             "Clientes"->renderParties("cliente")
             "Proveedores"->renderParties("proveedor")
             "Historial"->renderHistory()
@@ -261,7 +265,8 @@ class MainActivity : Activity() {
         if(appearance.getBoolean("ad_slot",false))root.addView(TextView(this).apply{text="Espacio publicitario · sin anuncios activos";textSize=11f;gravity=Gravity.CENTER;setTextColor(muted)},LinearLayout.LayoutParams(-1,dp(32)))
         val nav=row()
         val selected=when(tab){
-            "Compra","Caja","Turnos"->"Finanzas"
+            "Caja","Cierre","Movimiento","Turnos","Cobrar","Pagar"->"Finanzas"
+            "Compra"->"Inicio"
             "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
             else->tab
         }
@@ -287,9 +292,10 @@ class MainActivity : Activity() {
         body.addView(title("Accesos rápidos",19f))
         val actions=listOf(
             Triple("Nueva venta","Cobrar en el mostrador","Venta"),
-            Triple("Nueva compra","Entrar mercancía","Compra"),
-            Triple("Inventario","Productos, precios, QR","Inventario"),
-            Triple("Caja y arqueo","Turnos y efectivo","Caja"))
+            Triple("Compra de mercancía","Recibir productos y registrar factura","Compra"),
+            Triple("Movimiento del turno","Entradas y retiros de efectivo","Movimiento"),
+            Triple("Inventario","Productos, precios y existencias","Inventario"),
+            Triple("Cierre y arqueo","Contar efectivo y cerrar el turno","Cierre"))
         actions.chunked(2).forEach{pair->
             val line=row()
             pair.forEach{(label,detail,dest)->
@@ -326,19 +332,31 @@ class MainActivity : Activity() {
     }
     private fun renderFinance(){
         body.addView(title("Finanzas",25f))
-        navigate("Caja y arqueo","Abrir y cerrar turnos, entradas y retiros","Caja")
-        navigate("Compras","Recepción de mercancía y proveedores","Compra")
-        navigate("Cuentas por cobrar","Fiados y abonos de clientes","Clientes")
+        navigate("Cierre y arqueo","Resumen de efectivo y cierre de turno","Cierre")
+        navigate("Cuentas por cobrar","Clientes con saldos pendientes","Cobrar")
+        navigate("Cuentas por pagar","Proveedores con deudas y abonos","Pagar")
         navigate("Historial de turnos","Aperturas, cierres y responsables","Turnos")
-        body.addView(info("Libro diario y libro mayor contables: en desarrollo."))
+        navigate("Historial de movimientos","Ventas, compras y movimientos registrados","Historial")
     }
     private fun renderMore(){
         body.addView(title("Más opciones",25f))
-        listOf(
-            Triple("Clientes y fiados","Saldos, abonos y recordatorios","Clientes"),
-            Triple("Proveedores","Contactos, productos vinculados y deudas","Proveedores"),
-            Triple("Historial de acciones","Operaciones registradas","Historial")
-        ).forEach{navigate(it.first,it.second,it.third)}
+        navigate("Clientes","Directorio y datos de clientes","Clientes")
+        navigate("Proveedores","Directorio de proveedores","Proveedores")
+    }
+    private fun renderDebtors(type:String){
+        body.addView(title(if(type=="cliente")"Cuentas por cobrar" else "Cuentas por pagar",24f))
+        val pending=store.parties(type).filter{it.balance>0}
+        if(pending.isEmpty())body.addView(info("No hay saldos pendientes."))
+        pending.forEach{p->
+            val panel=card()
+            panel.addView(title(p.name,17f))
+            panel.addView(info("Saldo pendiente: "+money(p.balance)))
+            addButton(panel,"Ver cuenta y registrar abono"){
+                tab=if(type=="cliente")"Clientes" else "Proveedores"
+                render()
+            }
+            body.addView(panel)
+        }
     }
     private fun rememberCart(){
         val json=org.json.JSONObject()
@@ -799,6 +817,68 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun renderCashMovement(){
+        body.addView(title("Movimiento del turno",24f))
+        val open=ops.openCash()
+        if(open==null){
+            body.addView(info("No hay un turno abierto."))
+            addButton(body,"Abrir turno"){tab="Caja";render()}
+            return
+        }
+        body.addView(info("Responsable: "+open.operator+" · Apertura: "+open.opened))
+        body.addView(stat("Efectivo esperado",money(open.expected)))
+        val amount=field("Importe en C$",numeric=true)
+        val reason=field("Motivo obligatorio")
+        body.addView(amount);body.addView(reason)
+        val actions=row()
+        listOf("Entrada" to false,"Salida" to true).forEach{(label,withdrawal)->
+            actions.addView(btn(label){
+                try{
+                    ops.cashMove(cents(amount.text.toString()),reason.text.toString(),withdrawal)
+                    render();toast("Movimiento registrado")
+                }catch(e:Exception){toast(e.message?:"No se pudo registrar")}
+            },LinearLayout.LayoutParams(0,dp(48),1f).apply{rightMargin=dp(7)})
+        }
+        body.addView(actions)
+        body.addView(title("Movimientos del turno",18f))
+        ops.cashMoves().forEach{body.addView(info(it.date+" · "+it.kind+" · "+money(it.amount)+" · "+it.note))}
+    }
+    private fun renderCashClosing(){
+        body.addView(title("Cierre y arqueo",24f))
+        val open=ops.openCash()
+        if(open==null){
+            body.addView(info("No hay un turno abierto para cerrar."))
+            addButton(body,"Abrir turno"){tab="Caja";render()}
+            addButton(body,"Ver historial de turnos"){tab="Turnos";render()}
+            return
+        }
+        body.addView(info("Responsable: "+open.operator+" · Apertura: "+open.opened))
+        body.addView(stat("Fondo inicial",money(open.opening)))
+        val moves=ops.cashMoves(open.id)
+        val received=moves.filter{it.amount>0}.sumOf{it.amount}
+        val withdrawn=moves.filter{it.amount<0}.sumOf{-it.amount}
+        body.addView(stat("Entradas, incluidas ventas en efectivo",money(received)))
+        body.addView(stat("Salidas y retiros",money(withdrawn)))
+        body.addView(stat("Efectivo esperado",money(open.expected)))
+        body.addView(title("Detalle de movimientos",18f))
+        moves.forEach{body.addView(info(it.date+" · "+it.kind+" · "+money(it.amount)+" · "+it.note))}
+        val count=field("Efectivo contado en caja C$",numeric=true)
+        body.addView(count)
+        addButton(body,"Revisar y cerrar turno"){
+            try{
+                val counted=cents(count.text.toString())
+                AlertDialog.Builder(this).setTitle("Confirmar cierre")
+                    .setMessage("Inicial: "+money(open.opening)+"\nEntradas: "+money(received)+
+                        "\nSalidas: "+money(withdrawn)+"\nEsperado: "+money(open.expected)+
+                        "\nContado: "+money(counted)+"\nDiferencia: "+money(counted-open.expected))
+                    .setNegativeButton("Cancelar",null)
+                    .setPositiveButton("Cerrar turno"){_,_->
+                        try{ops.closeCash(counted);tab="Finanzas";render();toast("Turno cerrado")}
+                        catch(e:Exception){toast(e.message?:"No se pudo cerrar")}
+                    }.show()
+            }catch(e:Exception){toast("Ingrese el efectivo contado")}
+        }
+    }
     private fun renderCashHistory(){
         body.addView(title("Historial de turnos de caja",24f))
         val sessions=ops.cashHistory()
@@ -817,20 +897,20 @@ class MainActivity : Activity() {
             body.addView(panel)
         }
     }
+    private fun signOutSafely(){
+        AlertDialog.Builder(this).setTitle("Cerrar sesión")
+            .setMessage("Antes de salir, guarde un respaldo en Google Drive. Los registros locales se conservarán bloqueados para proteger los datos del negocio.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Cerrar sesión"){_,_->
+                val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
+                GoogleSignIn.getClient(this,options).signOut().addOnCompleteListener{render()}
+            }.show()
+    }
     private fun showQuickSettings(){
         AlertDialog.Builder(this).setTitle("NEXO POS")
-            .setItems(arrayOf("Configuración","Exportar a Google Sheets","Cuenta de Google","Cerrar sesión")){_,choice->
-                when(choice){
-                    0->{tab="Configuración";render()}
-                    1,2->{tab="Google";render();if(choice==1)toast("Pulse Guardar registros en Google Sheets")}
-                    3->AlertDialog.Builder(this).setTitle("Cerrar sesión de Google")
-                        .setMessage("Antes de cerrar sesión, guarda una copia en Google Drive. Los datos locales quedarán bloqueados, pero no se borrarán automáticamente para evitar perder cambios sin respaldo. Otra cuenta no podrá acceder a este negocio.")
-                        .setNegativeButton("Cancelar",null)
-                        .setPositiveButton("Cerrar sesión"){_,_->
-                            val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
-                            GoogleSignIn.getClient(this,options).signOut().addOnCompleteListener{render()}
-                        }.show()
-                }
+            .setItems(arrayOf("Configuración","Cuenta y datos")){_,choice->
+                tab=if(choice==0)"Configuración" else "Google"
+                render()
             }.show()
     }
     private fun renderSettings(){
@@ -949,7 +1029,7 @@ class MainActivity : Activity() {
         },{step->runOnUiThread{status.text=step}})
     }
     private fun renderCloud(){
-        body.addView(title("Tu cuenta de Google"))
+        body.addView(title("Cuenta y datos",25f))
         val account=GoogleSignIn.getLastSignedInAccount(this)
         body.addView(TextView(this).apply{
             text=account?.email ?: "No conectada. Puede usar esta versión local para probar el punto de venta."
@@ -957,21 +1037,8 @@ class MainActivity : Activity() {
             setPadding(0,dp(6),0,dp(8))
         })
         val sha=installedSha1()
-        body.addView(info("Identificador de la aplicación: "+packageName))
-        body.addView(info("SHA-1 de este APK: "+sha))
-        addButton(body,"Copiar datos para Google Cloud"){
-            val data="Paquete: "+packageName+"\nSHA-1: "+sha
-            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("NEXO POS OAuth Android",data))
-            toast("Datos copiados para Google Cloud")
-        }
-        addButton(body,if(account==null)"Entrar con Google" else "Cambiar cuenta Google"){
-            val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestEmail().build()
-            GoogleSignIn.getClient(this,options).signInIntent.also{startActivityForResult(it,120)}
-        }
-        body.addView(info("Si aparece el error 10, configure Google Cloud → Clientes OAuth → Android con este paquete y el SHA-1 exacto mostrado arriba."))
-        addButton(body,"Guardar registros en Google Sheets"){
+
+        addButton(body,"☁  Hacer copia de seguridad en Google Sheets"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
             val scopes=arrayOf(Scope(GoogleCloud.DRIVE_SCOPE),Scope(GoogleCloud.SHEETS_SCOPE))
@@ -981,7 +1048,7 @@ class MainActivity : Activity() {
                 syncGoogleSheets(signed)
             }
         }
-        addButton(body,"Recuperar copia de seguridad de Drive"){
+        addButton(body,"↺  Recuperar copia de seguridad"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
             val scope=Scope(GoogleCloud.DRIVE_SCOPE)
@@ -1002,6 +1069,20 @@ class MainActivity : Activity() {
                     }
                 }.show()
         }
+        val copySha=TextView(this).apply{
+            text="Copiar dato SHA-1";textSize=12f;setTextColor(0xff1976d2.toInt())
+            setPadding(dp(8),dp(20),dp(8),dp(16))
+            setOnClickListener{
+                (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("SHA-1 NEXO POS",sha))
+                toast("SHA-1 copiado")
+            }
+        }
+        body.addView(copySha)
+        val logout=btn("Cerrar sesión"){signOutSafely()}
+        logout.setTextColor(Color.WHITE)
+        logout.background=GradientDrawable().apply{setColor(0xffc62828.toInt());cornerRadius=dp(14).toFloat()}
+        body.addView(logout,LinearLayout.LayoutParams(-1,dp(48)))
         body.addView(info("Google Sheets: productos, ventas, detalle de ventas, clientes, proveedores y abonos."))
         body.addView(info("Google Calendar: desde Clientes puede preparar recordatorios de cobros, confirmándolos en su calendario."))
         body.addView(info("El teléfono conserva sus datos sin conexión. Sincronizar crea una copia JSON restaurable en Drive y actualiza la hoja de cálculo."))
@@ -1165,4 +1246,16 @@ class MainActivity : Activity() {
             tab="Venta";render()
         }
     }
+    @Deprecated("Android back navigation")
+    override fun onBackPressed(){
+        val target=when(tab){
+            "Compra","Movimiento"->"Inicio"
+            "Cierre","Caja","Turnos","Cobrar","Pagar"->"Finanzas"
+            "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
+            "Venta","Inventario","Finanzas","Más"->"Inicio"
+            else->null
+        }
+        if(target!=null){tab=target;render()}else super.onBackPressed()
+    }
+
 }
