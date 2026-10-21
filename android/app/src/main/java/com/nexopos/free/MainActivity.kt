@@ -923,6 +923,31 @@ class MainActivity : Activity() {
         }catch(_:Exception){"Firma no disponible"}
     }
 
+    private fun syncGoogleSheets(account:GoogleSignInAccount){
+        val panel=column().apply{setPadding(dp(24),dp(18),dp(24),dp(14))}
+        panel.addView(ProgressBar(this),LinearLayout.LayoutParams(-1,dp(48)))
+        val status=info("Conectando con Google…")
+        status.gravity=Gravity.CENTER
+        panel.addView(status)
+        val dialog=AlertDialog.Builder(this).setTitle("Sincronización con Google").setView(panel)
+            .setNegativeButton("Ocultar",null).create()
+        dialog.show()
+        val cloud=google
+        if(cloud==null){
+            dialog.dismiss()
+            AlertDialog.Builder(this).setTitle("Google no disponible")
+                .setMessage("No se pudo iniciar la sincronización. Vuelva a abrir la aplicación.")
+                .setPositiveButton("Aceptar",null).show()
+            return
+        }
+        cloud.pushToSheets(account,{message->
+            runOnUiThread{
+                dialog.dismiss()
+                AlertDialog.Builder(this).setTitle(if(message.startsWith("Guardado"))"Respaldo completado" else "Resultado de la sincronización")
+                    .setMessage(message).setPositiveButton("Aceptar",null).show()
+            }
+        },{step->runOnUiThread{status.text=step}})
+    }
     private fun renderCloud(){
         body.addView(title("Tu cuenta de Google"))
         val account=GoogleSignIn.getLastSignedInAccount(this)
@@ -953,8 +978,7 @@ class MainActivity : Activity() {
             if(!GoogleSignIn.hasPermissions(signed,*scopes)){
                 GoogleSignIn.requestPermissions(this,121,signed,*scopes)
             }else{
-                toast("Sincronizando con Google…")
-                google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
+                syncGoogleSheets(signed)
             }
         }
         addButton(body,"Recuperar copia de seguridad de Drive"){
@@ -1124,8 +1148,7 @@ class MainActivity : Activity() {
         if(requestCode==121){
             if(resultCode==RESULT_OK){
                 GoogleSignIn.getLastSignedInAccount(this)?.let{signed->
-                    toast("Permiso concedido; sincronizando…")
-                    google?.pushToSheets(signed){message->runOnUiThread{toast(message)}}
+                    syncGoogleSheets(signed)
                 }
             }else toast("No se autorizó el acceso a Drive")
             return
