@@ -64,6 +64,37 @@ class MainActivity : Activity() {
     private var pdfOptions=LabelPdf.Layout()
     private var google: GoogleCloud? = null
     private val appearance by lazy { getSharedPreferences("nexo_appearance",Context.MODE_PRIVATE) }
+    private val syncHandler=android.os.Handler(android.os.Looper.getMainLooper())
+    private var syncInProgress=false
+    private var syncStatus:TextView?=null
+    private val syncTask=object:Runnable{
+        override fun run(){
+            val minutes=appearance.getInt("sync_minutes",0)
+            if(minutes>=5){syncNow();syncHandler.postDelayed(this,minutes*60000L)}
+        }
+    }
+    private fun scheduleAutoSync(){
+        syncHandler.removeCallbacks(syncTask)
+        val minutes=appearance.getInt("sync_minutes",0)
+        if(minutes>=5)syncHandler.postDelayed(syncTask,minutes*60000L)
+    }
+    private fun syncNow(){
+        if(syncInProgress)return
+        val account=GoogleSignIn.getLastSignedInAccount(this)?:return
+        val scopes=arrayOf(Scope(GoogleCloud.DRIVE_SCOPE),Scope(GoogleCloud.SHEETS_SCOPE))
+        if(!GoogleSignIn.hasPermissions(account,*scopes))return
+        syncInProgress=true
+        syncStatus?.apply{text="Sincronizando con Google Sheets…";visibility=View.VISIBLE}
+        google?.pushToSheets(account,{result->
+            runOnUiThread{
+                syncInProgress=false
+                syncStatus?.apply{text=result;visibility=View.VISIBLE}
+            }
+        })
+    }
+    override fun onResume(){super.onResume();scheduleAutoSync()}
+    override fun onPause(){syncHandler.removeCallbacks(syncTask);super.onPause()}
+
     private fun lightTheme()=when(appearance.getString("theme","system")){
         "light"->true;"dark"->false;else->(resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)!=android.content.res.Configuration.UI_MODE_NIGHT_YES
     }
