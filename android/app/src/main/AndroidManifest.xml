@@ -8,6 +8,7 @@
         android:fullBackupContent="true"
         android:usesCleartextTraffic="false"
         android:label="NEXO POS"
+        android:icon="@drawable/nexo_brand"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:supportsRtl="true">
         <activity
