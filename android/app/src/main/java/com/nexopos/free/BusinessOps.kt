@@ -93,7 +93,7 @@ class BusinessOps(private val store:Store){
         db.beginTransaction()
         try{
             db.execSQL("INSERT INTO purchases(id,date,supplier_id,supplier_name,invoice,freight,method,total) VALUES(?,?,?,?,?,?,?,?)",
-                arrayOf(id,at,supplier?.id,supplier?.name?:"Sin proveedor",invoice,freight,total,method))
+                arrayOf(id,at,supplier?.id,supplier?.name?:"Sin proveedor",invoice,freight,method,total))
             for(item in items){
                 val saved=item.productId?.let{p->store.products().firstOrNull{it.id==p}}
                 val pid=saved?.id?:UUID.randomUUID().toString()
@@ -125,6 +125,21 @@ class BusinessOps(private val store:Store){
                 c.getString(2),c.getLong(3),c.getString(4)))
         }
         return result
+    }
+
+    @Synchronized fun purchaseDetail(id:String):String{
+        val header=db.rawQuery("SELECT date,supplier_name,invoice,freight,method,total FROM purchases WHERE id=?",arrayOf(id)).use{cursor->
+            if(!cursor.moveToFirst())return "Compra no encontrada"
+            "Fecha: "+cursor.getString(0)+"\nProveedor: "+cursor.getString(1)+
+                "\nFactura: "+cursor.getString(2)+"\nFlete: C$"+(cursor.getLong(3)/100.0)+
+                "\nPago: "+cursor.getString(4)+"\nTotal: C$"+(cursor.getLong(5)/100.0)
+        }
+        val lines=mutableListOf<String>()
+        db.rawQuery("SELECT name,qty,cost FROM purchase_lines WHERE purchase_id=? ORDER BY name",arrayOf(id)).use{cursor->
+            while(cursor.moveToNext())lines.add(cursor.getString(0)+" × "+cursor.getInt(1)+
+                " · C$"+(cursor.getLong(2)/100.0)+" c/u")
+        }
+        return header+"\n\nProductos:\n"+lines.joinToString("\n").ifEmpty{"Sin detalle"}
     }
 
     @Synchronized fun supplierPayment(supplierId:String,amount:Long){

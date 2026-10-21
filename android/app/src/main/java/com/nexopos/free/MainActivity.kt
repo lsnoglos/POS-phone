@@ -80,7 +80,7 @@ class MainActivity : Activity() {
         fun channel(v:Int):Double{val x=v/255.0;return if(x<=0.04045)x/12.92 else Math.pow((x+0.055)/1.055,2.4)}
         return 0.2126*channel(Color.red(color))+0.7152*channel(Color.green(color))+0.0722*channel(Color.blue(color))
     }
-    private val tabs = listOf("Inicio","Venta","Inventario","Finanzas","Más")
+    private val tabs = listOf("Inicio","Inventario","Finanzas","Más")
 
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
@@ -273,7 +273,7 @@ class MainActivity : Activity() {
         tabs.forEach{item->
             val action=btn(item){tab=item;render()}
             action.textSize=13f
-            action.text=mapOf("Inicio" to "⌂\nInicio","Venta" to "▣\nVenta","Inventario" to "▦\nInventario","Finanzas" to "▤\nFinanzas","Más" to "☷\nMás")[item]?:item
+            action.text=mapOf("Inicio" to "⌂\nInicio","Inventario" to "▦\nInventario","Finanzas" to "▤\nFinanzas","Más" to "☷\nMás")[item]?:item
             if(item==selected)action.setTextColor(accentText())
             else { action.setTextColor(ink); action.background=GradientDrawable().apply{setColor(Color.TRANSPARENT)} }
             nav.addView(action,LinearLayout.LayoutParams(0,dp(66),1f).apply{rightMargin=dp(3)})
@@ -293,22 +293,28 @@ class MainActivity : Activity() {
         val actions=listOf(
             Triple("Nueva venta","Cobrar en el mostrador","Venta"),
             Triple("Compra de mercancía","Recibir productos y registrar factura","Compra"),
-            Triple("Movimiento del turno","Entradas y retiros de efectivo","Movimiento"),
-            Triple("Inventario","Productos, precios y existencias","Inventario"),
-            Triple("Cierre y arqueo","Contar efectivo y cerrar el turno","Cierre"))
-        actions.chunked(2).forEach{pair->
-            val line=row()
-            pair.forEach{(label,detail,dest)->
-                val item=card()
-                val palette=listOf(0xffe93c9c.toInt(),0xff6246ea.toInt(),0xff0eaa86.toInt(),0xfff49b36.toInt())
-                val color=palette[actions.indexOf(Triple(label,detail,dest)).coerceIn(0,3)]
-                item.background=GradientDrawable().apply{setColor(color);cornerRadius=dp(18).toFloat()}
-                item.addView(TextView(this).apply{text=label;textSize=18f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)})
-                item.addView(TextView(this).apply{text=detail;textSize=12f;setTextColor(Color.WHITE)})
-                item.setOnClickListener{tab=dest;render()}
-                line.addView(item,LinearLayout.LayoutParams(0,dp(114),1f).apply{rightMargin=dp(7)})
+            Triple("Movimiento del turno","Entradas y retiros de efectivo","Movimiento"))
+        actions.forEachIndexed{index,(label,detail,dest)->
+            val item=card()
+            val color=listOf(0xffe93c9c.toInt(),0xff6246ea.toInt(),0xff0eaa86.toInt())[index]
+            item.background=GradientDrawable().apply{setColor(color);cornerRadius=dp(18).toFloat()}
+            item.addView(TextView(this).apply{text=label;textSize=if(index==0)23f else 17f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)})
+            item.addView(TextView(this).apply{text=detail;textSize=13f;setTextColor(Color.WHITE)})
+            item.setOnClickListener{tab=dest;render()}
+            if(index==0)body.addView(item,LinearLayout.LayoutParams(-1,dp(140)).apply{bottomMargin=dp(10)})
+            else{
+                if(index==1){
+                    val line=row()
+                    line.addView(item,LinearLayout.LayoutParams(0,dp(118),1f).apply{rightMargin=dp(6)})
+                    val other=card()
+                    other.background=GradientDrawable().apply{setColor(0xff0eaa86.toInt());cornerRadius=dp(18).toFloat()}
+                    other.addView(TextView(this).apply{text=actions[2].first;textSize=17f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)})
+                    other.addView(TextView(this).apply{text=actions[2].second;textSize=13f;setTextColor(Color.WHITE)})
+                    other.setOnClickListener{tab="Movimiento";render()}
+                    line.addView(other,LinearLayout.LayoutParams(0,dp(118),1f))
+                    body.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})
+                }
             }
-            body.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(7)})
         }
         body.addView(title("Resumen",19f))
         listOf(
@@ -373,7 +379,10 @@ class MainActivity : Activity() {
     }
     private fun renderSale(){
         body.addView(title("Nueva venta",25f))
-        addButton(body,"▣  Escanear QR continuamente"){openScanner()}
+        val scan=btn("▣  Escanear QR continuamente"){openScanner()}
+        scan.background=GradientDrawable().apply{setColor(0xff5265c9.toInt());cornerRadius=dp(14).toFloat()}
+        scan.setTextColor(Color.WHITE)
+        body.addView(scan,LinearLayout.LayoutParams(-1,dp(52)).apply{bottomMargin=dp(8)})
         val search=field("Buscar producto, categoría, SKU o código",saleQuery)
         body.addView(search)
         body.addView(title("Carrito · "+cart.values.sum()+" artículos",20f))
@@ -409,10 +418,13 @@ class MainActivity : Activity() {
         }
         body.addView(selected)
         body.addView(title("Total: "+money(total),25f))
-        addButton(body,"Cobrar · "+money(total)){
+        val collect=btn("Cobrar · "+money(total)){
             if(cart.isEmpty())toast("Agregue productos al carrito")
             else checkoutDialog(total)
         }
+        collect.background=GradientDrawable().apply{setColor(0xff0e9476.toInt());cornerRadius=dp(14).toFloat()}
+        collect.setTextColor(Color.WHITE)
+        body.addView(collect,LinearLayout.LayoutParams(-1,dp(54)).apply{bottomMargin=dp(8)})
         body.addView(title("Catálogo de productos",18f))
         val catalog=column()
         body.addView(catalog)
@@ -500,15 +512,34 @@ class MainActivity : Activity() {
         val list=store.products()
         body.addView(info("Registrados: "+list.size+". Pulse un producto para editar sus datos."))
         list.forEach{p->
-            val block=column()
-            block.addView(title(p.name,17f))
-            block.addView(info("Costo "+money(p.cost)+" · Venta "+money(p.price)+" · existencias "+p.qty))
-            if(p.category.isNotBlank())block.addView(info("Categoría: "+p.category))
-            val actions=row()
-            actions.addView(btn("Editar"){productDialog(p)})
-            actions.addView(btn("Añadir al carrito"){cartAdd(p);tab="Venta";render()})
-            block.addView(actions)
-            body.addView(block)
+            val panel=card()
+            val line=row()
+            if(p.photo.isNotBlank()){
+                val image=ImageView(this).apply{
+                    try{setImageURI(Uri.parse(p.photo))}catch(_:Exception){}
+                    scaleType=ImageView.ScaleType.CENTER_CROP
+                    background=GradientDrawable().apply{setColor(cream);cornerRadius=dp(10).toFloat()}
+                    clipToOutline=true
+                }
+                line.addView(image,LinearLayout.LayoutParams(dp(66),dp(66)).apply{rightMargin=dp(9)})
+            }
+            val details=column()
+            details.addView(title(p.name,16f))
+            details.addView(info("Costo "+money(p.cost)+" · Venta "+money(p.price)))
+            details.addView(info("Existencias "+p.qty+(if(p.category.isBlank())"" else " · "+p.category)))
+            line.addView(details,LinearLayout.LayoutParams(0,-2,1f))
+            val buttons=column()
+            val edit=btn("Editar"){productDialog(p)}
+            edit.background=GradientDrawable().apply{setColor(0xff5265c9.toInt());cornerRadius=dp(11).toFloat()}
+            edit.setTextColor(Color.WHITE)
+            buttons.addView(edit,LinearLayout.LayoutParams(dp(98),dp(43)))
+            val add=btn("+ Carrito"){cartAdd(p);tab="Venta";render()}
+            add.background=GradientDrawable().apply{setColor(0xff0e9476.toInt());cornerRadius=dp(11).toFloat()}
+            add.setTextColor(Color.WHITE)
+            buttons.addView(add,LinearLayout.LayoutParams(dp(98),dp(43)).apply{topMargin=dp(6)})
+            line.addView(buttons)
+            panel.addView(line)
+            body.addView(panel,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})
         }
     }
     private fun productDialog(existing:Product?){
@@ -611,9 +642,25 @@ class MainActivity : Activity() {
         body.addView(info("Seleccione proveedor y agregue mercancía. El inventario se actualizará al recibirla."))
         val suppliers=store.parties("proveedor")
         body.addView(info("Proveedor"))
-        val supplierSelect=Spinner(this)
-        supplierSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,
-            listOf("Sin proveedor")+suppliers.map{it.name})
+        val supplierSelect=Spinner(this).apply{
+            background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(12).toFloat();setStroke(dp(1),muted)}
+        }
+        val supplierNames=listOf("Seleccionar proveedor")+suppliers.map{it.name}
+        val supplierAdapter=object:ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,supplierNames){
+            override fun getView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return (super.getView(position,convertView,parent) as TextView).apply{
+                    setTextColor(ink);setPadding(dp(12),dp(9),dp(12),dp(9))
+                }
+            }
+            override fun getDropDownView(position:Int,convertView:View?,parent:ViewGroup):View{
+                return (super.getDropDownView(position,convertView,parent) as TextView).apply{
+                    setTextColor(if(lightTheme())Color.BLACK else Color.WHITE)
+                    setBackgroundColor(if(lightTheme())Color.WHITE else 0xff303330.toInt())
+                    setPadding(dp(12),dp(13),dp(12),dp(13))
+                }
+            }
+        }
+        supplierSelect.adapter=supplierAdapter
         supplierSelect.setSelection((suppliers.indexOfFirst{it.id==purchaseSupplierId}+1).coerceAtLeast(0))
         supplierSelect.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
             override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
@@ -621,8 +668,11 @@ class MainActivity : Activity() {
                 purchaseSupplierId=if(position==0)null else suppliers[position-1].id
             }
         }
-        body.addView(supplierSelect,LinearLayout.LayoutParams(-1,dp(48)))
-        addButton(body,"+ Registrar proveedor sin salir de la compra"){partyDialog("proveedor")}
+        val supplierLine=row()
+        supplierLine.addView(supplierSelect,LinearLayout.LayoutParams(0,dp(52),1f))
+        supplierLine.addView(btn("+ Nuevo"){partyDialog("proveedor")},LinearLayout.LayoutParams(dp(104),dp(52)).apply{leftMargin=dp(8)})
+        body.addView(supplierLine)
+        body.addView(info("Proveedor seleccionado: "+(suppliers.firstOrNull{it.id==purchaseSupplierId}?.name?:"Ninguno")))
         if(purchaseSupplierId!=null){
             val associated=ops.supplierProducts(purchaseSupplierId!!)
             body.addView(info("Productos comprados anteriormente a este proveedor: "+associated.size))
@@ -715,8 +765,16 @@ class MainActivity : Activity() {
             }catch(e:Exception){toast(e.message?:"Datos incompletos")}
         }
         body.addView(title("Compras recientes",18f))
-        ops.purchases().take(12).forEach{p->
-            body.addView(info(p.date+" · "+p.supplier+" · "+money(p.total)+" · "+p.method))
+        ops.purchases().take(30).forEach{p->
+            val purchase=card()
+            purchase.addView(title(p.supplier+" · "+money(p.total),16f))
+            purchase.addView(info(p.date+" · "+p.method))
+            purchase.addView(btn("Ver factura y productos"){
+                AlertDialog.Builder(this).setTitle("Detalle de compra")
+                    .setMessage(ops.purchaseDetail(p.id))
+                    .setPositiveButton("Cerrar",null).show()
+            })
+            body.addView(purchase,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(7)})
         }
     }
 
@@ -978,7 +1036,18 @@ class MainActivity : Activity() {
         body.addView(info("Moneda para esta edición: Córdoba (C$). Antes de habilitar otra moneda deben adaptarse formatos y cálculos."))
     }
     private fun renderHistory(){
-        body.addView(title("Ventas registradas"))
+        body.addView(title("Historial de movimientos"))
+        body.addView(title("Compras de mercancía",19f))
+        ops.purchases().forEach{p->
+            val entry=card()
+            entry.addView(title(p.supplier+" · "+money(p.total),16f))
+            entry.addView(info(p.date+" · "+p.method))
+            entry.addView(btn("Ver productos y factura"){
+                AlertDialog.Builder(this).setTitle("Compra registrada").setMessage(ops.purchaseDetail(p.id)).setPositiveButton("Cerrar",null).show()
+            })
+            body.addView(entry)
+        }
+        body.addView(title("Ventas registradas",19f))
         val sales=store.sales()
         body.addView(info("Ventas locales: "+sales.size))
         sales.forEach{s->
@@ -1103,17 +1172,31 @@ class MainActivity : Activity() {
         val copies=field("Copias por producto (1 a 50)",pdfOptions.copies.toString(),true)
         val margin=field("Margen en milímetros",pdfOptions.marginMm.toString(),true)
         val gap=field("Separación en milímetros",pdfOptions.gapMm.toString(),true)
-        listOf(cols,rows,copies,margin,gap).forEach{box.addView(it)}
-        val photos=CheckBox(this).apply{text="Incluir fotografía si existe";isChecked=pdfOptions.showPhoto;setTextColor(ink)}
-        val business=CheckBox(this).apply{text="Mostrar nombre del negocio";isChecked=pdfOptions.showBusiness;setTextColor(ink)}
+        listOf(
+            "Columnas" to cols,"Filas" to rows,"Copias por producto" to copies,
+            "Margen (mm)" to margin,"Separación (mm)" to gap
+        ).forEach{(label,input)->
+            val container=column()
+            val caption=TextView(this).apply{
+                text=label;textSize=13f;typeface=Typeface.DEFAULT_BOLD
+                setTextColor(if(lightTheme())0xff303b38.toInt() else Color.WHITE)
+                setPadding(dp(3),dp(8),0,dp(4))
+            }
+            container.addView(caption)
+            container.addView(input)
+            box.addView(container)
+        }
+
+        val photos=CheckBox(this).apply{text="Incluir fotografía si existe";isChecked=pdfOptions.showPhoto;setTextColor(if(lightTheme())ink else Color.WHITE);buttonTintList=android.content.res.ColorStateList.valueOf(if(lightTheme())0xff087e69.toInt() else 0xff85e6c8.toInt())}
+        val business=CheckBox(this).apply{text="Mostrar nombre del negocio";isChecked=pdfOptions.showBusiness;setTextColor(if(lightTheme())ink else Color.WHITE);buttonTintList=android.content.res.ColorStateList.valueOf(if(lightTheme())0xff087e69.toInt() else 0xff85e6c8.toInt())}
         box.addView(photos);box.addView(business)
         box.addView(title("Seleccionar productos",16f))
         val checkboxes=products.map{p->
-            CheckBox(this).apply{text=p.name+" · "+money(p.price);isChecked=true;setTextColor(ink)}
+            CheckBox(this).apply{text=p.name+" · "+money(p.price);isChecked=true;setTextColor(if(lightTheme())ink else Color.WHITE);buttonTintList=android.content.res.ColorStateList.valueOf(if(lightTheme())0xff087e69.toInt() else 0xff85e6c8.toInt())}
                 .also{box.addView(it)}
         }
         val scroll=ScrollView(this).apply{addView(box)}
-        val dialog=AlertDialog.Builder(this).setTitle("Etiquetas QR · hoja carta")
+        val dialog=AlertDialog.Builder(this,if(lightTheme())android.app.AlertDialog.THEME_DEVICE_DEFAULT_LIGHT else android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK).setTitle("Etiquetas QR · hoja carta")
             .setView(scroll).setNegativeButton("Cancelar",null)
             .setPositiveButton("Generar PDF",null).create()
         dialog.setOnShowListener{
