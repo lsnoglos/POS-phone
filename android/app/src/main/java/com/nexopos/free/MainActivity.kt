@@ -748,8 +748,16 @@ class MainActivity : Activity() {
             }catch(e:Exception){toast(e.message?:"Datos incompletos")}
         }
         body.addView(title("Compras recientes",18f))
-        ops.purchases().take(12).forEach{p->
-            body.addView(info(p.date+" · "+p.supplier+" · "+money(p.total)+" · "+p.method))
+        ops.purchases().take(30).forEach{p->
+            val purchase=card()
+            purchase.addView(title(p.supplier+" · "+money(p.total),16f))
+            purchase.addView(info(p.date+" · "+p.method))
+            purchase.addView(btn("Ver factura y productos"){
+                AlertDialog.Builder(this).setTitle("Detalle de compra")
+                    .setMessage(ops.purchaseDetail(p.id))
+                    .setPositiveButton("Cerrar",null).show()
+            })
+            body.addView(purchase,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(7)})
         }
     }
 
@@ -1011,7 +1019,18 @@ class MainActivity : Activity() {
         body.addView(info("Moneda para esta edición: Córdoba (C$). Antes de habilitar otra moneda deben adaptarse formatos y cálculos."))
     }
     private fun renderHistory(){
-        body.addView(title("Ventas registradas"))
+        body.addView(title("Historial de movimientos"))
+        body.addView(title("Compras de mercancía",19f))
+        ops.purchases().forEach{p->
+            val entry=card()
+            entry.addView(title(p.supplier+" · "+money(p.total),16f))
+            entry.addView(info(p.date+" · "+p.method))
+            entry.addView(btn("Ver productos y factura"){
+                AlertDialog.Builder(this).setTitle("Compra registrada").setMessage(ops.purchaseDetail(p.id)).setPositiveButton("Cerrar",null).show()
+            })
+            body.addView(entry)
+        }
+        body.addView(title("Ventas registradas",19f))
         val sales=store.sales()
         body.addView(info("Ventas locales: "+sales.size))
         sales.forEach{s->
