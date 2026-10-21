@@ -520,7 +520,13 @@ class MainActivity : Activity() {
                     if(payment=="Fiado")require(customerId!=null){"Seleccione un cliente registrado para fiar"}
                     val paid=if(payment=="Efectivo")paidInCordobas() else total
                     require(paid>=total){"El efectivo recibido es insuficiente"}
-                    val saved=store.charge(cart.toMap(),customerId,payment)
+                    val selectedCurrency=if(currencySpinner.selectedItemPosition==1)"USD" else "NIO"
+                    val appliedRate=if(selectedCurrency=="USD")ops.setting("usd_buy","36.50") else "1"
+                    val originalReceived=if(payment=="Efectivo")cents(received.text.toString()) else 0L
+                    val saved=store.charge(cart.toMap(),customerId,payment,
+                        if(payment=="Efectivo")selectedCurrency else "NIO",
+                        originalReceived,appliedRate,if(payment=="Efectivo")paid else 0L,
+                        if(payment=="Efectivo")paid-total else 0L)
                     val change=if(payment=="Efectivo")paid-total else 0L
                     cart.clear();rememberCart();chosenCustomer=null;chosenMethod=payment
                     dialog.dismiss()
