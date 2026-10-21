@@ -144,8 +144,9 @@ class MainActivity : Activity() {
             else->terracotta
         }
         background=GradientDrawable().apply{setColor(shade);cornerRadius=dp(14).toFloat()}
-        setTextColor(Color.WHITE)
-        setPadding(dp(10),dp(8),dp(10),dp(8))
+        setTextColor(if(androidxColorLuminance(shade)>0.47)Color.BLACK else Color.WHITE)
+        elevation=dp(1).toFloat()
+        setPadding(dp(12),dp(8),dp(12),dp(8))
         setOnClickListener{action()}
     }
     private fun addButton(where:LinearLayout,label:String,action:()->Unit){
@@ -274,12 +275,12 @@ class MainActivity : Activity() {
             "Configuración"->renderSettings()
             "Turnos"->renderCashHistory()
         }
-        if(appearance.getBoolean("ad_slot",false))root.addView(TextView(this).apply{text="Espacio publicitario · sin anuncios activos";textSize=11f;gravity=Gravity.CENTER;setTextColor(muted)},LinearLayout.LayoutParams(-1,dp(32)))
+
         val nav=row()
         val selected=when(tab){
             "Caja","Cierre","Movimiento","Turnos","Cobrar","Pagar"->"Finanzas"
             "Compra"->"Inicio"
-            "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
+            "Clientes","Proveedores","Historial","Google","Configuración","Cajeros"->"Más"
             else->tab
         }
         tabs.forEach{item->
@@ -1099,9 +1100,6 @@ class MainActivity : Activity() {
                 ops.saveSettings(data);render();toast("Configuración guardada localmente")
             }catch(e:Exception){toast(e.message?:"Datos inválidos")}
         }
-        body.addView(title("Publicidad",20f))
-        body.addView(info("La franja publicitaria es opcional. No se mostrarán anuncios hasta integrar un proveedor."))
-        addButton(body,if(appearance.getBoolean("ad_slot",false))"Ocultar espacio publicitario" else "Reservar espacio publicitario"){appearance.edit().putBoolean("ad_slot",!appearance.getBoolean("ad_slot",false)).apply();render()}
         body.addView(title("Apariencia y marca",20f))
         addButton(body,"Seleccionar logo del negocio"){
             val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{
