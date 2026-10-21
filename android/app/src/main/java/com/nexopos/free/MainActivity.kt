@@ -180,7 +180,7 @@ class MainActivity : Activity() {
         page.addView(TextView(this).apply{text="Tu negocio, en buenas manos";textSize=18f;gravity=Gravity.CENTER;setTextColor(ink)})
         page.addView(TextView(this).apply{text="Inicia sesión para acceder a tus datos. Los registros de una cuenta no deben compartirse con otra.";textSize=15f;gravity=Gravity.CENTER;setTextColor(muted);setPadding(0,dp(28),0,dp(30))})
         addButton(page,"Continuar con Google"){launchGoogleLogin()}
-        val content=ScrollView(this).apply{fillViewport=true;addView(page)}
+        val content=ScrollView(this).apply{isFillViewport=true;addView(page)}
         root.addView(content,LinearLayout.LayoutParams(-1,0,1f))
         val footer=column().apply{gravity=Gravity.CENTER_HORIZONTAL}
         footer.addView(TextView(this).apply{
