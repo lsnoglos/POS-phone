@@ -7,7 +7,7 @@ import java.util.Locale
 import java.util.UUID
 
 private fun stamp():String=SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US).format(Date())
-data class PurchaseItem(val productId:String?,val name:String,val category:String,val qty:Int,val cost:Long,val salePrice:Long)
+data class PurchaseItem(val productId:String?,val name:String,val category:String,val qty:Int,val cost:Long,val salePrice:Long,val barcode:String="",val photo:String="")
 data class PurchaseRecord(val id:String,val date:String,val supplier:String,val total:Long,val method:String)
 data class CashShift(val id:String,val opened:String,val opening:Long,val expected:Long,val operator:String)
 data class CashShiftHistory(val id:String,val opened:String,val opening:Long,val closed:String?,val counted:Long?,val expected:Long,val operator:String)
@@ -98,7 +98,7 @@ class BusinessOps(private val store:Store){
                 val saved=item.productId?.let{p->store.products().firstOrNull{it.id==p}}
                 val pid=saved?.id?:UUID.randomUUID().toString()
                 if(saved==null){
-                    store.saveProduct(Product(pid,item.name,item.category,"",item.cost,item.salePrice,item.qty,""))
+                    store.saveProduct(Product(pid,item.name,item.category,item.barcode,item.cost,item.salePrice,item.qty,item.photo))
                 }else{
                     db.execSQL("UPDATE products SET qty=qty+?,cost=?,price=?,updated=? WHERE id=?",
                         arrayOf(item.qty,item.cost,item.salePrice,at,pid))

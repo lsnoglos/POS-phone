@@ -133,7 +133,18 @@ class MainActivity : Activity() {
     private fun row():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
     private fun btn(text:String,action:()->Unit):Button=Button(this).apply{
         this.text=text;textSize=13f;setAllCaps(false);setTextColor(accentText());minHeight=0;minimumHeight=0;includeFontPadding=false
-        background=GradientDrawable().apply{setColor(terracotta);cornerRadius=dp(14).toFloat()}
+        val shade=when{
+            text.contains("QR",true)||text.contains("Escanear",true)->0xff5265c9.toInt()
+            text.contains("Compra",true)||text.contains("mercancía",true)->0xff6546dc.toInt()
+            text.contains("Foto",true)||text.contains("galería",true)->0xffba3992.toInt()
+            text.contains("Editar",true)||text.contains("detalles",true)->0xff4262bd.toInt()
+            text.contains("Retiro",true)||text.contains("Cerrar",true)||text.contains("Quitar",true)->0xffc44c4c.toInt()
+            text.contains("PDF",true)||text.contains("etiquetas",true)->0xffb47719.toInt()
+            text.contains("Guardar",true)||text.contains("Registrar",true)||text.contains("Recibir",true)->0xff078d72.toInt()
+            else->terracotta
+        }
+        background=GradientDrawable().apply{setColor(shade);cornerRadius=dp(14).toFloat()}
+        setTextColor(Color.WHITE)
         setPadding(dp(10),dp(8),dp(10),dp(8))
         setOnClickListener{action()}
     }
@@ -520,7 +531,13 @@ class MainActivity : Activity() {
                     if(payment=="Fiado")require(customerId!=null){"Seleccione un cliente registrado para fiar"}
                     val paid=if(payment=="Efectivo")paidInCordobas() else total
                     require(paid>=total){"El efectivo recibido es insuficiente"}
-                    val saved=store.charge(cart.toMap(),customerId,payment)
+                    val selectedCurrency=if(currencySpinner.selectedItemPosition==1)"USD" else "NIO"
+                    val appliedRate=if(selectedCurrency=="USD")ops.setting("usd_buy","36.50") else "1"
+                    val originalReceived=if(payment=="Efectivo")cents(received.text.toString()) else 0L
+                    val saved=store.charge(cart.toMap(),customerId,payment,
+                        if(payment=="Efectivo")selectedCurrency else "NIO",
+                        originalReceived,appliedRate,if(payment=="Efectivo")paid else 0L,
+                        if(payment=="Efectivo")paid-total else 0L)
                     val change=if(payment=="Efectivo")paid-total else 0L
                     cart.clear();rememberCart();chosenCustomer=null;chosenMethod=payment
                     dialog.dismiss()
@@ -824,12 +841,24 @@ class MainActivity : Activity() {
         val cost=field("Costo por unidad",numeric=true)
         val price=field("Precio de venta",numeric=true)
         val qty=field("Cantidad recibida","1",true)
+        val barcode=field("Código de barras (opcional)")
+        var selectedPhoto=""
+        val photoButton=btn("📷  Adjuntar fotografía (opcional)"){
+            photoChanged={uri->selectedPhoto=uri;toast("Foto agregada a la compra")}
+            val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{
+                addCategory(Intent.CATEGORY_OPENABLE);type="image/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+            startActivityForResult(intent,110)
+        }
         listOf("Nombre del producto" to name,"Categoría" to category,"Costo por unidad (C$)" to cost,"Precio de venta (C$, opcional)" to price,"Cantidad recibida" to qty).forEach{(label,input)->box.addView(info(label));box.addView(input)}
+        box.addView(info("Código de barras / SKU (opcional)"));box.addView(barcode)
+        box.addView(photoButton)
         AlertDialog.Builder(this).setTitle("Producto nuevo en la compra").setView(ScrollView(this).apply{addView(box)})
             .setNegativeButton("Cancelar",null).setPositiveButton("Añadir"){_,_->
                 try{
                     val item=PurchaseItem(null,name.text.toString().trim(),category.text.toString().trim(),
-                        qty.text.toString().toInt(),cents(cost.text.toString()),cents(price.text.toString()))
+                        qty.text.toString().toInt(),cents(cost.text.toString()),cents(price.text.toString()),barcode.text.toString().trim(),selectedPhoto)
                     require(item.name.length>=2&&item.qty>0&&item.cost>=0&&item.salePrice>=0){"Revise los datos"}
                     purchaseCart[UUID.randomUUID().toString()]=item
                     render()
