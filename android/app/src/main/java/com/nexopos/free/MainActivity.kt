@@ -578,11 +578,12 @@ class MainActivity : Activity() {
         val cost=field("Precio del proveedor",existing?.let{BigDecimal.valueOf(it.cost,2).toPlainString()}?:"",true)
         val price=field("Precio de venta",existing?.let{BigDecimal.valueOf(it.price,2).toPlainString()}?:"",true)
         val qty=field("Cantidad en inventario",existing?.qty?.toString()?:"0",true)
-        listOf(name,cost,price,qty).forEach{wrapper.addView(it)}
+        listOf("Nombre del producto" to name,"Costo por unidad (C$)" to cost,"Precio de venta (C$)" to price,"Cantidad en inventario" to qty).forEach{(label,input)->wrapper.addView(info(label));wrapper.addView(input)}
         val detail=column()
         val category=field("Categoría",existing?.category?:"")
         val barcode=field("Código de barras (opcional)",existing?.barcode?:"")
-        detail.addView(category);detail.addView(barcode)
+        detail.addView(info("Categoría"));detail.addView(category)
+        detail.addView(info("Código de barras (opcional)"));detail.addView(barcode)
         detail.visibility=View.GONE
         wrapper.addView(btn("Más detalles  ▾"){detail.visibility=if(detail.visibility==View.VISIBLE)View.GONE else View.VISIBLE})
         wrapper.addView(detail)
@@ -760,9 +761,11 @@ class MainActivity : Activity() {
         val invoice=field("Número de factura o referencia",purchaseInvoice)
         invoice.addTextChangedListener(simpleWatcher{purchaseInvoice=it})
         body.addView(invoice)
+        body.addView(info("Flete: costo de transporte de esta mercancía en C$. Escriba 0 si no hubo transporte."))
         val freight=field("Flete C$",purchaseFreight,true)
         freight.addTextChangedListener(simpleWatcher{purchaseFreight=it})
         body.addView(freight)
+        body.addView(info("Forma de pago: Contado descuenta el pago; Crédito deja una deuda pendiente al proveedor."))
         val methods=listOf("Contado","Crédito")
         val methodSelect=Spinner(this)
         methodSelect.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,methods)
