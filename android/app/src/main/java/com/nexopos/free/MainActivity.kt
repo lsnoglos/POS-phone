@@ -824,8 +824,8 @@ class MainActivity : Activity() {
         val cost=field("Costo por unidad",numeric=true)
         val price=field("Precio de venta",numeric=true)
         val qty=field("Cantidad recibida","1",true)
-        listOf(name,category,cost,price,qty).forEach{box.addView(it)}
-        AlertDialog.Builder(this).setTitle("Producto nuevo en la compra").setView(box)
+        listOf("Nombre del producto" to name,"Categoría" to category,"Costo por unidad (C$)" to cost,"Precio de venta (C$, opcional)" to price,"Cantidad recibida" to qty).forEach{(label,input)->box.addView(info(label));box.addView(input)}
+        AlertDialog.Builder(this).setTitle("Producto nuevo en la compra").setView(ScrollView(this).apply{addView(box)})
             .setNegativeButton("Cancelar",null).setPositiveButton("Añadir"){_,_->
                 try{
                     val item=PurchaseItem(null,name.text.toString().trim(),category.text.toString().trim(),
@@ -842,8 +842,8 @@ class MainActivity : Activity() {
         val qty=field("Cantidad",item.qty.toString(),true)
         val cost=field("Costo unitario",BigDecimal.valueOf(item.cost,2).toPlainString(),true)
         val price=field("Precio venta",BigDecimal.valueOf(item.salePrice,2).toPlainString(),true)
-        listOf(qty,cost,price).forEach{box.addView(it)}
-        AlertDialog.Builder(this).setTitle(item.name).setView(box)
+        listOf("Cantidad de unidades" to qty,"Costo unitario (C$)" to cost,"Precio de venta (C$)" to price).forEach{(label,input)->box.addView(info(label));box.addView(input)}
+        AlertDialog.Builder(this).setTitle(item.name).setView(ScrollView(this).apply{addView(box)})
             .setNegativeButton("Cancelar",null).setPositiveButton("Aplicar"){_,_->
                 try{
                     val q=qty.text.toString().toInt()
