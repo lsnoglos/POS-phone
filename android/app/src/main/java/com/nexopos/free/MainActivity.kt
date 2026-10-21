@@ -475,20 +475,50 @@ class MainActivity : Activity() {
             setSelection(methods.indexOf(chosenMethod).coerceAtLeast(0))
         }
         form.addView(methodsSpinner)
-        val received=field("Efectivo recibido",BigDecimal.valueOf(total,2).toPlainString(),true)
+        form.addView(info("Moneda recibida"))
+        val currencyOptions=listOf("Córdobas (C$)","Dólares (US$)")
+        val currencySpinner=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,currencyOptions)
+        }
+        form.addView(currencySpinner)
+        form.addView(info("Cantidad entregada por el cliente"))
+        val received=field("Cantidad recibida",BigDecimal.valueOf(total,2).toPlainString(),true)
         form.addView(received)
+        val changePreview=title("Cambio: C$0.00",18f)
+        form.addView(changePreview)
+        fun paidInCordobas():Long{
+            val receivedCents=cents(received.text.toString())
+            val rate=if(currencySpinner.selectedItemPosition==1)
+                BigDecimal(ops.setting("usd_buy","36.50")) else BigDecimal.ONE
+            require(rate>BigDecimal.ZERO){"La tasa de compra del dólar debe ser positiva"}
+            return BigDecimal.valueOf(receivedCents).multiply(rate)
+                .setScale(0,RoundingMode.HALF_UP).longValueExact()
+        }
+        fun updateChange(){
+            try{
+                val diff=paidInCordobas()-total
+                changePreview.text=if(diff>=0)"Cambio: "+money(diff) else "Faltan: "+money(-diff)
+                changePreview.setTextColor(if(diff>=0)0xff0b9676.toInt() else 0xffd13d4e.toInt())
+            }catch(_:Exception){changePreview.text="Ingrese un monto válido"}
+        }
+        received.addTextChangedListener(simpleWatcher{updateChange()})
+        currencySpinner.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){updateChange()}
+        }
         form.addView(info("El efectivo recibido se utiliza únicamente para calcular el cambio en pagos al contado."))
         val dialog=AlertDialog.Builder(this).setTitle("Confirmar cobro · "+money(total))
-            .setView(form).setNegativeButton("Cancelar",null)
+            .setView(ScrollView(this).apply{addView(form)}).setNegativeButton("Cancelar",null)
             .setPositiveButton("Registrar venta",null).create()
         dialog.setOnShowListener{
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
                 try{
                     val customerIndex=customersSpinner.selectedItemPosition
                     val customerId=if(customerIndex==0)null else customers[customerIndex-1].id
                     val payment=methods[methodsSpinner.selectedItemPosition]
                     if(payment=="Fiado")require(customerId!=null){"Seleccione un cliente registrado para fiar"}
-                    val paid=if(payment=="Efectivo")cents(received.text.toString()) else total
+                    val paid=if(payment=="Efectivo")paidInCordobas() else total
                     require(paid>=total){"El efectivo recibido es insuficiente"}
                     val saved=store.charge(cart.toMap(),customerId,payment)
                     val change=if(payment=="Efectivo")paid-total else 0L
