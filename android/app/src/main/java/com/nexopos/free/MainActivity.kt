@@ -169,12 +169,34 @@ class MainActivity : Activity() {
         startActivityForResult(GoogleSignIn.getClient(this,options).signInIntent,120)
     }
     private fun renderLoginGate(){
-        val page=column().apply{gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(22),dp(65),dp(22),dp(24))}
-        page.addView(TextView(this).apply{text="NEXO POS";textSize=36f;typeface=Typeface.DEFAULT_BOLD;gravity=Gravity.CENTER;setTextColor(terracotta)},LinearLayout.LayoutParams(-1,dp(110)))
+        val page=column().apply{gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(22),dp(24),dp(22),dp(16))}
+        val brand=ImageView(this).apply{
+            setImageResource(R.drawable.nexo_brand)
+            scaleType=ImageView.ScaleType.FIT_CENTER
+            contentDescription="Logo NEXO POS"
+        }
+        page.addView(brand,LinearLayout.LayoutParams(-1,dp(170)))
+        page.addView(TextView(this).apply{text="NEXO POS";textSize=28f;typeface=Typeface.DEFAULT_BOLD;gravity=Gravity.CENTER;setTextColor(terracotta)},LinearLayout.LayoutParams(-1,dp(54)))
         page.addView(TextView(this).apply{text="Tu negocio, en buenas manos";textSize=18f;gravity=Gravity.CENTER;setTextColor(ink)})
         page.addView(TextView(this).apply{text="Inicia sesión para acceder a tus datos. Los registros de una cuenta no deben compartirse con otra.";textSize=15f;gravity=Gravity.CENTER;setTextColor(muted);setPadding(0,dp(28),0,dp(30))})
         addButton(page,"Continuar con Google"){launchGoogleLogin()}
-        root.addView(page,LinearLayout.LayoutParams(-1,-1))
+        val content=ScrollView(this).apply{fillViewport=true;addView(page)}
+        root.addView(content,LinearLayout.LayoutParams(-1,0,1f))
+        val footer=column().apply{gravity=Gravity.CENTER_HORIZONTAL}
+        footer.addView(TextView(this).apply{
+            text="Paquete: "+packageName+"  ·  SHA-1: "+installedSha1()
+            textSize=10f;gravity=Gravity.CENTER;setTextColor(muted)
+            setTextIsSelectable(true)
+        },LinearLayout.LayoutParams(-1,-2))
+        footer.addView(TextView(this).apply{
+            text="¿Olvidaste tu contraseña de Google?"
+            textSize=12f;gravity=Gravity.CENTER;setTextColor(terracotta)
+            setPadding(0,dp(10),0,dp(8))
+            setOnClickListener{
+                startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://accounts.google.com/signin/recovery")))
+            }
+        },LinearLayout.LayoutParams(-1,-2))
+        root.addView(footer,LinearLayout.LayoutParams(-1,-2))
     }
     private fun offerCloudRestore(){
         AlertDialog.Builder(this).setTitle("¿Recuperar datos de Google Drive?")
