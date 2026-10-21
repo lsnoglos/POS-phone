@@ -36,7 +36,7 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
     private val drive="https://www.googleapis.com/drive/v3/files"
     private val sheets="https://sheets.googleapis.com/v4/spreadsheets"
 
-    fun pushToSheets(account:GoogleSignInAccount,done:(String)->Unit){
+    fun pushToSheets(account:GoogleSignInAccount,done:(String)->Unit,progress:(String)->Unit={}){
         thread.execute {
             try{
                 val email=account.email ?: error("La cuenta no tiene correo")
@@ -45,14 +45,17 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                     "Esta instalación pertenece a otra cuenta Google. No se puede mezclar información."
                 }
                 val token=GoogleAuthUtil.getToken(activity,Account(email,"com.google"),"oauth2:$DRIVE_SCOPE $SHEETS_SCOPE")
+                progress("Conectando con Google Drive…")
                 val root=folder(token,"NEXO POS",null)
                 val imageRoot=folder(token,"Imágenes",root)
+                progress("Preparando el libro de Google Sheets…")
                 val spreadsheet=sheet(token,root)
                 val original=store.sheets()
                 val photos=mutableMapOf<String,String>()
                 var photoErrors=0
                 for(p in store.products()){
                     if(p.photo.isBlank())continue
+                    progress("Revisando imagen: "+p.name.take(50))
                     if(p.photo.startsWith("drive:")){photos[p.id]=p.photo;continue}
                     val key="photo_"+email+"_"+p.id+"_"+p.photo.hashCode()+"_"+p.category.hashCode()
                     val known=prefs.getString(key,null)
@@ -68,6 +71,7 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                     }catch(_:Exception){photoErrors++}
                 }
                 if(photoErrors>0) error("Hay "+photoErrors+" fotografías pendientes. No se creó una copia incompleta.")
+                progress("Preparando tablas y respaldo…")
                 val data=JSONArray()
                 val backupTables=JSONObject()
                 for((tab,rows) in original){
@@ -90,6 +94,7 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                     .put("mimeType","application/json").put("parents",JSONArray().put(root)),
                     "application/json",backup.toString().toByteArray(Charsets.UTF_8))
                 // Old rows must be cleared before a shorter export to prevent ghost records.
+                progress("Actualizando las pestañas de Google Sheets…")
                 val ranges=JSONArray()
                 val keys=original.keys
                 for(name in keys)ranges.put(name+"!A1:Z10000")
@@ -98,6 +103,7 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
                 request(token,"POST",sheets+"/"+spreadsheet+"/values:batchUpdate",
                     JSONObject().put("valueInputOption","RAW").put("data",data).toString())
                 prefs.edit().putString("owner_email",email).putString("sheet_"+email,spreadsheet).apply()
+                progress("Sincronización finalizada.")
                 done("Guardado en Google Sheets y copia recuperable en Drive. "+
                     original.size+" tablas; imágenes organizadas por categoría.")
             }catch(e:UserRecoverableAuthException){
@@ -271,7 +277,9 @@ class GoogleCloud(private val activity: Activity,private val store: Store){
             bitmap.compress(Bitmap.CompressFormat.JPEG,78,bytes)
             bitmap.recycle()
         }?:error("No se pudo abrir la fotografía")
-        val metadata=JSONObject().put("name",product.id+".jpg").put("parents",JSONArray().put(parent))
+        val safeName=product.name.trim().replace(Regex("[^\\p{L}\\p{N} _-]"),"").replace(Regex("\\s+"),"_").take(65).ifBlank{"Producto"}
+        val timestamp=SimpleDateFormat("yyyy-MM-dd_HH-mm-ss",Locale.US).format(Date())
+        val metadata=JSONObject().put("name",safeName+"_"+timestamp+"_"+product.id.take(8)+".jpg").put("parents",JSONArray().put(parent))
             .put("mimeType","image/jpeg")
         return uploadBytes(token,metadata,"image/jpeg",bytes.toByteArray())
     }
