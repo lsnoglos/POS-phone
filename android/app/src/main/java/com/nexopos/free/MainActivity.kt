@@ -897,20 +897,20 @@ class MainActivity : Activity() {
             body.addView(panel)
         }
     }
+    private fun signOutSafely(){
+        AlertDialog.Builder(this).setTitle("Cerrar sesión")
+            .setMessage("Antes de salir, guarde un respaldo en Google Drive. Los registros locales se conservarán bloqueados para proteger los datos del negocio.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Cerrar sesión"){_,_->
+                val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
+                GoogleSignIn.getClient(this,options).signOut().addOnCompleteListener{render()}
+            }.show()
+    }
     private fun showQuickSettings(){
         AlertDialog.Builder(this).setTitle("NEXO POS")
-            .setItems(arrayOf("Configuración","Exportar a Google Sheets","Cuenta de Google","Cerrar sesión")){_,choice->
-                when(choice){
-                    0->{tab="Configuración";render()}
-                    1,2->{tab="Google";render();if(choice==1)toast("Pulse Guardar registros en Google Sheets")}
-                    3->AlertDialog.Builder(this).setTitle("Cerrar sesión de Google")
-                        .setMessage("Antes de cerrar sesión, guarda una copia en Google Drive. Los datos locales quedarán bloqueados, pero no se borrarán automáticamente para evitar perder cambios sin respaldo. Otra cuenta no podrá acceder a este negocio.")
-                        .setNegativeButton("Cancelar",null)
-                        .setPositiveButton("Cerrar sesión"){_,_->
-                            val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
-                            GoogleSignIn.getClient(this,options).signOut().addOnCompleteListener{render()}
-                        }.show()
-                }
+            .setItems(arrayOf("Configuración","Cuenta y datos")){_,choice->
+                tab=if(choice==0)"Configuración" else "Google"
+                render()
             }.show()
     }
     private fun renderSettings(){
@@ -1029,7 +1029,7 @@ class MainActivity : Activity() {
         },{step->runOnUiThread{status.text=step}})
     }
     private fun renderCloud(){
-        body.addView(title("Tu cuenta de Google"))
+        body.addView(title("Cuenta y datos",25f))
         val account=GoogleSignIn.getLastSignedInAccount(this)
         body.addView(TextView(this).apply{
             text=account?.email ?: "No conectada. Puede usar esta versión local para probar el punto de venta."
@@ -1039,19 +1039,7 @@ class MainActivity : Activity() {
         val sha=installedSha1()
         body.addView(info("Identificador de la aplicación: "+packageName))
         body.addView(info("SHA-1 de este APK: "+sha))
-        addButton(body,"Copiar datos para Google Cloud"){
-            val data="Paquete: "+packageName+"\nSHA-1: "+sha
-            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("NEXO POS OAuth Android",data))
-            toast("Datos copiados para Google Cloud")
-        }
-        addButton(body,if(account==null)"Entrar con Google" else "Cambiar cuenta Google"){
-            val options=GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestEmail().build()
-            GoogleSignIn.getClient(this,options).signInIntent.also{startActivityForResult(it,120)}
-        }
-        body.addView(info("Si aparece el error 10, configure Google Cloud → Clientes OAuth → Android con este paquete y el SHA-1 exacto mostrado arriba."))
-        addButton(body,"Guardar registros en Google Sheets"){
+        addButton(body,"☁  Hacer copia de seguridad en Google Sheets"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
             val scopes=arrayOf(Scope(GoogleCloud.DRIVE_SCOPE),Scope(GoogleCloud.SHEETS_SCOPE))
@@ -1061,7 +1049,7 @@ class MainActivity : Activity() {
                 syncGoogleSheets(signed)
             }
         }
-        addButton(body,"Recuperar copia de seguridad de Drive"){
+        addButton(body,"↺  Recuperar copia de seguridad"){
             val signed=GoogleSignIn.getLastSignedInAccount(this)
             if(signed==null){toast("Primero entre con Google");return@addButton}
             val scope=Scope(GoogleCloud.DRIVE_SCOPE)
