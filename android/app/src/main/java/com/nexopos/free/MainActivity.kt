@@ -251,6 +251,10 @@ class MainActivity : Activity() {
             "Más"->renderMore()
             "Compra"->renderPurchase()
             "Caja"->renderCash()
+            "Movimiento"->renderCashMovement()
+            "Cierre"->renderCashClosing()
+            "Cobrar"->renderDebtors("cliente")
+            "Pagar"->renderDebtors("proveedor")
             "Clientes"->renderParties("cliente")
             "Proveedores"->renderParties("proveedor")
             "Historial"->renderHistory()
@@ -261,7 +265,8 @@ class MainActivity : Activity() {
         if(appearance.getBoolean("ad_slot",false))root.addView(TextView(this).apply{text="Espacio publicitario · sin anuncios activos";textSize=11f;gravity=Gravity.CENTER;setTextColor(muted)},LinearLayout.LayoutParams(-1,dp(32)))
         val nav=row()
         val selected=when(tab){
-            "Compra","Caja","Turnos"->"Finanzas"
+            "Caja","Cierre","Movimiento","Turnos","Cobrar","Pagar"->"Finanzas"
+            "Compra"->"Inicio"
             "Clientes","Proveedores","Historial","Google","Configuración"->"Más"
             else->tab
         }
@@ -287,9 +292,10 @@ class MainActivity : Activity() {
         body.addView(title("Accesos rápidos",19f))
         val actions=listOf(
             Triple("Nueva venta","Cobrar en el mostrador","Venta"),
-            Triple("Nueva compra","Entrar mercancía","Compra"),
-            Triple("Inventario","Productos, precios, QR","Inventario"),
-            Triple("Caja y arqueo","Turnos y efectivo","Caja"))
+            Triple("Compra de mercancía","Recibir productos y registrar factura","Compra"),
+            Triple("Movimiento del turno","Entradas y retiros de efectivo","Movimiento"),
+            Triple("Inventario","Productos, precios y existencias","Inventario"),
+            Triple("Cierre y arqueo","Contar efectivo y cerrar el turno","Cierre"))
         actions.chunked(2).forEach{pair->
             val line=row()
             pair.forEach{(label,detail,dest)->
@@ -326,19 +332,31 @@ class MainActivity : Activity() {
     }
     private fun renderFinance(){
         body.addView(title("Finanzas",25f))
-        navigate("Caja y arqueo","Abrir y cerrar turnos, entradas y retiros","Caja")
-        navigate("Compras","Recepción de mercancía y proveedores","Compra")
-        navigate("Cuentas por cobrar","Fiados y abonos de clientes","Clientes")
+        navigate("Cierre y arqueo","Resumen de efectivo y cierre de turno","Cierre")
+        navigate("Cuentas por cobrar","Clientes con saldos pendientes","Cobrar")
+        navigate("Cuentas por pagar","Proveedores con deudas y abonos","Pagar")
         navigate("Historial de turnos","Aperturas, cierres y responsables","Turnos")
-        body.addView(info("Libro diario y libro mayor contables: en desarrollo."))
+        navigate("Historial de movimientos","Ventas, compras y movimientos registrados","Historial")
     }
     private fun renderMore(){
         body.addView(title("Más opciones",25f))
-        listOf(
-            Triple("Clientes y fiados","Saldos, abonos y recordatorios","Clientes"),
-            Triple("Proveedores","Contactos, productos vinculados y deudas","Proveedores"),
-            Triple("Historial de acciones","Operaciones registradas","Historial")
-        ).forEach{navigate(it.first,it.second,it.third)}
+        navigate("Clientes","Directorio y datos de clientes","Clientes")
+        navigate("Proveedores","Directorio de proveedores","Proveedores")
+    }
+    private fun renderDebtors(type:String){
+        body.addView(title(if(type=="cliente")"Cuentas por cobrar" else "Cuentas por pagar",24f))
+        val pending=store.parties(type).filter{it.balance>0}
+        if(pending.isEmpty())body.addView(info("No hay saldos pendientes."))
+        pending.forEach{p->
+            val panel=card()
+            panel.addView(title(p.name,17f))
+            panel.addView(info("Saldo pendiente: "+money(p.balance)))
+            addButton(panel,"Ver cuenta y registrar abono"){
+                tab=if(type=="cliente")"Clientes" else "Proveedores"
+                render()
+            }
+            body.addView(panel)
+        }
     }
     private fun rememberCart(){
         val json=org.json.JSONObject()
