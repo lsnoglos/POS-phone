@@ -13,6 +13,9 @@ data class Product(val id:String,val name:String,val category:String,val barcode
 data class Party(val id:String,val type:String,val name:String,val phone:String,val balance:Long)
 data class Sale(val id:String,val date:String,val customer:String,val method:String,val total:Long)
 
+data class ReceiptLine(val name:String,val quantity:Int,val unitPrice:Long)
+data class ReceiptDetails(val sale:Sale,val lines:List<ReceiptLine>,val phone:String,val currency:String,val received:Long,val rate:String,val receivedNio:Long,val changeNio:Long)
+
 class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,5){
     override fun onCreate(db:SQLiteDatabase){
         db.execSQL("CREATE TABLE products(id TEXT PRIMARY KEY,name TEXT NOT NULL,category TEXT NOT NULL,barcode TEXT NOT NULL,cost INTEGER NOT NULL,price INTEGER NOT NULL,qty INTEGER NOT NULL CHECK(qty>=0),photo TEXT NOT NULL,updated TEXT NOT NULL)")
@@ -106,6 +109,22 @@ class Store(context:Context):SQLiteOpenHelper(context,"nexo_local.db",null,5){
             while(c.moveToNext()) rows.add(Sale(c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getLong(4)))
         }
         return rows
+    }
+    fun receipt(saleId:String):ReceiptDetails?{
+        val db=readableDatabase
+        val sale=db.rawQuery("SELECT s.id,s.date,s.customer,s.method,s.total,COALESCE(p.phone,'') FROM sales s LEFT JOIN parties p ON p.id=s.party_id WHERE s.id=?",arrayOf(saleId)).use{c->
+            if(c.moveToFirst())Pair(Sale(c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getLong(4)),c.getString(5)) else null
+        }?:return null
+        val lines=mutableListOf<ReceiptLine>()
+        db.rawQuery("SELECT name,qty,price FROM lines WHERE sale_id=? ORDER BY rowid",arrayOf(saleId)).use{c->
+            while(c.moveToNext())lines.add(ReceiptLine(c.getString(0),c.getInt(1),c.getLong(2)))
+        }
+        val payment=db.rawQuery("SELECT currency,received,rate,received_nio,change_nio FROM sale_currency WHERE sale_id=?",arrayOf(saleId)).use{c->
+            if(c.moveToFirst())listOf(c.getString(0),c.getLong(1).toString(),c.getString(2),c.getLong(3).toString(),c.getLong(4).toString()) else null
+        }
+        return ReceiptDetails(sale.first,lines,sale.second,payment?.get(0)?:"NIO",
+            payment?.get(1)?.toLongOrNull()?:0L,payment?.get(2)?:"1",
+            payment?.get(3)?.toLongOrNull()?:0L,payment?.get(4)?.toLongOrNull()?:0L)
     }
     /** Stock and sale commit atomically; no duplicate lines for repeated scans. */
     @Synchronized fun charge(cart:Map<String,Int>,partyId:String?,method:String,currency:String="NIO",received:Long=0L,rate:String="1",receivedNio:Long=0L,changeNio:Long=0L):Sale{
