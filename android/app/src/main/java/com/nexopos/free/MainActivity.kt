@@ -753,12 +753,8 @@ class MainActivity : Activity() {
                     val change=if(payment=="Efectivo")paid-total else 0L
                     cart.clear();rememberCart();chosenCustomer=null;chosenMethod=payment
                     dialog.dismiss()
-                    AlertDialog.Builder(this).setTitle("Venta registrada")
-                        .setMessage("Comprobante "+saved.id.take(8)+"\nCliente: "+saved.customer+
-                            "\nTotal: "+money(saved.total)+"\nMétodo: "+saved.method+
-                            "\nCambio: "+money(change)+"\nGuardado en el teléfono.")
-                        .setPositiveButton("Listo",null).show()
                     render()
+                    showReceipt(saved.id)
                 }catch(e:Exception){toast(e.message?:"No se pudo realizar el cobro")}
             }
         }
@@ -1320,6 +1316,7 @@ class MainActivity : Activity() {
         sales.forEach{s->
             body.addView(title(money(s.total)+" · "+s.method,17f))
             body.addView(info(s.date+" · "+s.customer+" · "+s.id.take(8)))
+            addButton(body,"Ver recibo y compartir por WhatsApp"){showReceipt(s.id)}
         }
     }
     private fun installedSha1():String{
