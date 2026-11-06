@@ -176,8 +176,8 @@ class MainActivity : Activity() {
         }
         background=GradientDrawable().apply{setColor(shade);cornerRadius=dp(14).toFloat()}
         setTextColor(if(androidxColorLuminance(shade)>0.47)Color.BLACK else Color.WHITE)
-        elevation=dp(1).toFloat()
-        setPadding(dp(12),dp(8),dp(12),dp(8))
+        elevation=0f
+        setPadding(dp(10),dp(7),dp(10),dp(7))
         setOnClickListener{action()}
     }
     private fun addButton(where:LinearLayout,label:String,action:()->Unit){
@@ -694,8 +694,10 @@ class MainActivity : Activity() {
     }
     private fun renderInventory(){
         body.addView(title("Inventario"))
-        addButton(body,"+ Registrar producto"){productDialog(null)}
-        addButton(body,"Generar hoja carta con etiquetas QR"){createPdf()}
+        val tools=row()
+        tools.addView(btn("+ Producto"){productDialog(null)},LinearLayout.LayoutParams(0,dp(45),1f).apply{rightMargin=dp(5)})
+        tools.addView(btn("Etiquetas QR"){createPdf()},LinearLayout.LayoutParams(0,dp(45),1f).apply{leftMargin=dp(5)})
+        body.addView(tools,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(10)})
         val list=store.products()
         body.addView(info("Registrados: "+list.size+". Pulse un producto para editar sus datos."))
         if(list.isEmpty())body.addView(info("Todavía no hay productos registrados."))
