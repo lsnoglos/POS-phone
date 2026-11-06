@@ -592,25 +592,7 @@ class MainActivity : Activity() {
             val match=store.products().filter{p->
                 term.isEmpty()||p.name.contains(term,true)||p.category.contains(term,true)||p.barcode.contains(term,true)
             }.sortedWith(compareByDescending<Product>{it.qty>0}.thenBy{it.name.lowercase()})
-            match.take(if(term.isBlank())20 else 60).forEach{product->
-                val r=card()
-                val line=row()
-                if(product.photo.isNotBlank()){
-                    val image=ImageView(this).apply{
-                        try{setImageURI(Uri.parse(product.photo))}catch(_:Exception){}
-                        scaleType=ImageView.ScaleType.CENTER_CROP
-                    }
-                    line.addView(image,LinearLayout.LayoutParams(dp(56),dp(56)).apply{rightMargin=dp(10)})
-                }
-                val description=column()
-                description.addView(title(product.name,16f))
-                description.addView(info(money(product.price)+" · hay "+product.qty+
-                    (if(product.category.isNotBlank())" · "+product.category else "")))
-                line.addView(description,LinearLayout.LayoutParams(0,-2,1f))
-                line.addView(btn("+"){cartAdd(product)})
-                r.addView(line)
-                catalog.addView(r,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(5)})
-            }
+            catalog.addView(productGrid(match.take(if(term.isBlank())20 else 60),"sale"))
             if(match.isEmpty())catalog.addView(info("No se encontraron productos. Regístrelos en Inventario."))
         }
         filter(saleQuery)
