@@ -212,6 +212,83 @@ class MainActivity : Activity() {
         setPadding(dp(13),dp(9),dp(13),dp(9))
         background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(17).toFloat()}
     }
+    private fun productTile(product:Product,mode:String):LinearLayout{
+        val tile=card().apply{
+            setPadding(dp(9),dp(10),dp(9),dp(10))
+            background=GradientDrawable().apply{
+                setColor(surface);cornerRadius=dp(17).toFloat()
+                setStroke(dp(1),if(lightTheme())0xffe8ece8.toInt() else 0xff343e38.toInt())
+            }
+        }
+        val picture=android.widget.FrameLayout(this).apply{
+            background=GradientDrawable().apply{setColor(if(lightTheme())0xfff3f5f2.toInt() else 0xff29332d.toInt());cornerRadius=dp(13).toFloat()}
+            clipToOutline=true
+        }
+        if(product.photo.isNotBlank()){
+            val photo=ImageView(this).apply{
+                try{setImageURI(Uri.parse(product.photo))}catch(_:Exception){}
+                scaleType=ImageView.ScaleType.FIT_CENTER
+                setPadding(dp(6),dp(6),dp(6),dp(6))
+            }
+            picture.addView(photo,android.widget.FrameLayout.LayoutParams(-1,-1))
+        }else{
+            picture.addView(TextView(this).apply{
+                text="▣";textSize=40f;gravity=Gravity.CENTER;setTextColor(muted)
+            },android.widget.FrameLayout.LayoutParams(-1,-1))
+        }
+        val add=TextView(this).apply{
+            text="+";textSize=26f;gravity=Gravity.CENTER;setTextColor(if(lightTheme())ink else Color.WHITE)
+            background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(28).toFloat()}
+            elevation=dp(2).toFloat()
+            contentDescription=if(mode=="inventory")"Añadir al carrito" else if(mode=="purchase")"Añadir a la compra" else "Añadir al carrito"
+            setOnClickListener{
+                when(mode){
+                    "purchase"->{
+                        val old=purchaseCart[product.id]
+                        purchaseCart[product.id]=if(old!=null)old.copy(qty=old.qty+1)
+                            else PurchaseItem(product.id,product.name,product.category,1,product.cost,product.price)
+                        render()
+                    }
+                    else->{cartAdd(product);if(mode=="inventory"){tab="Venta";render()}}
+                }
+            }
+        }
+        picture.addView(add,android.widget.FrameLayout.LayoutParams(dp(43),dp(43),Gravity.BOTTOM or Gravity.RIGHT).apply{
+            rightMargin=dp(7);bottomMargin=dp(7)
+        })
+        tile.addView(picture,LinearLayout.LayoutParams(-1,dp(136)))
+        tile.addView(title(product.name,15f).apply{
+            maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END
+        },LinearLayout.LayoutParams(-1,dp(53)))
+        val price=if(mode=="purchase")product.cost else product.price
+        tile.addView(title(money(price),19f).apply{setPadding(0,0,0,0)})
+        tile.addView(info(if(mode=="inventory")"Costo "+money(product.cost)+" · "+product.qty+" disponibles"
+            else if(mode=="purchase")"Existencias: "+product.qty else "Disponibles: "+product.qty).apply{
+            textSize=12f;maxLines=2
+        })
+        if(mode=="inventory"){
+            tile.addView(TextView(this).apply{
+                text="Editar producto";textSize=13f;gravity=Gravity.CENTER
+                setTextColor(terracotta);setPadding(dp(5),dp(9),dp(5),dp(9))
+                setOnClickListener{productDialog(product)}
+            })
+        }
+        return tile
+    }
+    private fun productGrid(products:List<Product>,mode:String):LinearLayout{
+        val grid=column()
+        products.chunked(2).forEach{pair->
+            val line=row().apply{gravity=Gravity.TOP}
+            pair.forEach{product->
+                line.addView(productTile(product,mode),LinearLayout.LayoutParams(0,-2,1f).apply{
+                    leftMargin=dp(3);rightMargin=dp(3);bottomMargin=dp(9)
+                })
+            }
+            if(pair.size==1)line.addView(View(this),LinearLayout.LayoutParams(0,dp(1),1f))
+            grid.addView(line)
+        }
+        return grid
+    }
     private fun navigate(text:String,detail:String,dest:String){
         val item=card()
         item.addView(title(text,17f));item.addView(info(detail))
