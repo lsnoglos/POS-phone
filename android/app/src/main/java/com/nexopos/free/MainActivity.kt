@@ -176,8 +176,8 @@ class MainActivity : Activity() {
         }
         background=GradientDrawable().apply{setColor(shade);cornerRadius=dp(14).toFloat()}
         setTextColor(if(androidxColorLuminance(shade)>0.47)Color.BLACK else Color.WHITE)
-        elevation=dp(1).toFloat()
-        setPadding(dp(12),dp(8),dp(12),dp(8))
+        elevation=0f
+        setPadding(dp(10),dp(7),dp(10),dp(7))
         setOnClickListener{action()}
     }
     private fun addButton(where:LinearLayout,label:String,action:()->Unit){
@@ -211,6 +211,83 @@ class MainActivity : Activity() {
     private fun card():LinearLayout=column().apply{
         setPadding(dp(13),dp(9),dp(13),dp(9))
         background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(17).toFloat()}
+    }
+    private fun productTile(product:Product,mode:String):LinearLayout{
+        val tile=card().apply{
+            setPadding(dp(9),dp(10),dp(9),dp(10))
+            background=GradientDrawable().apply{
+                setColor(surface);cornerRadius=dp(17).toFloat()
+                setStroke(dp(1),if(lightTheme())0xffe8ece8.toInt() else 0xff343e38.toInt())
+            }
+        }
+        val picture=android.widget.FrameLayout(this).apply{
+            background=GradientDrawable().apply{setColor(if(lightTheme())0xfff3f5f2.toInt() else 0xff29332d.toInt());cornerRadius=dp(13).toFloat()}
+            clipToOutline=true
+        }
+        if(product.photo.isNotBlank()){
+            val photo=ImageView(this).apply{
+                try{setImageURI(Uri.parse(product.photo))}catch(_:Exception){}
+                scaleType=ImageView.ScaleType.FIT_CENTER
+                setPadding(dp(6),dp(6),dp(6),dp(6))
+            }
+            picture.addView(photo,android.widget.FrameLayout.LayoutParams(-1,-1))
+        }else{
+            picture.addView(TextView(this).apply{
+                text="▣";textSize=40f;gravity=Gravity.CENTER;setTextColor(muted)
+            },android.widget.FrameLayout.LayoutParams(-1,-1))
+        }
+        val add=TextView(this).apply{
+            text="+";textSize=26f;gravity=Gravity.CENTER;setTextColor(if(lightTheme())ink else Color.WHITE)
+            background=GradientDrawable().apply{setColor(surface);cornerRadius=dp(28).toFloat()}
+            elevation=dp(2).toFloat()
+            contentDescription=if(mode=="inventory")"Añadir al carrito" else if(mode=="purchase")"Añadir a la compra" else "Añadir al carrito"
+            setOnClickListener{
+                when(mode){
+                    "purchase"->{
+                        val old=purchaseCart[product.id]
+                        purchaseCart[product.id]=if(old!=null)old.copy(qty=old.qty+1)
+                            else PurchaseItem(product.id,product.name,product.category,1,product.cost,product.price)
+                        render()
+                    }
+                    else->{cartAdd(product);if(mode=="inventory"){tab="Venta";render()}}
+                }
+            }
+        }
+        picture.addView(add,android.widget.FrameLayout.LayoutParams(dp(43),dp(43),Gravity.BOTTOM or Gravity.RIGHT).apply{
+            rightMargin=dp(7);bottomMargin=dp(7)
+        })
+        tile.addView(picture,LinearLayout.LayoutParams(-1,dp(136)))
+        tile.addView(title(product.name,15f).apply{
+            maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END
+        },LinearLayout.LayoutParams(-1,dp(53)))
+        val price=if(mode=="purchase")product.cost else product.price
+        tile.addView(title(money(price),19f).apply{setPadding(0,0,0,0)})
+        tile.addView(info(if(mode=="inventory")"Costo "+money(product.cost)+" · "+product.qty+" disponibles"
+            else if(mode=="purchase")"Existencias: "+product.qty else "Disponibles: "+product.qty).apply{
+            textSize=12f;maxLines=2
+        })
+        if(mode=="inventory"){
+            tile.addView(TextView(this).apply{
+                text="Editar producto";textSize=13f;gravity=Gravity.CENTER
+                setTextColor(terracotta);setPadding(dp(5),dp(9),dp(5),dp(9))
+                setOnClickListener{productDialog(product)}
+            })
+        }
+        return tile
+    }
+    private fun productGrid(products:List<Product>,mode:String):LinearLayout{
+        val grid=column()
+        products.chunked(2).forEach{pair->
+            val line=row().apply{gravity=Gravity.TOP}
+            pair.forEach{product->
+                line.addView(productTile(product,mode),LinearLayout.LayoutParams(0,-2,1f).apply{
+                    leftMargin=dp(3);rightMargin=dp(3);bottomMargin=dp(9)
+                })
+            }
+            if(pair.size==1)line.addView(View(this),LinearLayout.LayoutParams(0,dp(1),1f))
+            grid.addView(line)
+        }
+        return grid
     }
     private fun navigate(text:String,detail:String,dest:String){
         val item=card()
@@ -515,25 +592,7 @@ class MainActivity : Activity() {
             val match=store.products().filter{p->
                 term.isEmpty()||p.name.contains(term,true)||p.category.contains(term,true)||p.barcode.contains(term,true)
             }.sortedWith(compareByDescending<Product>{it.qty>0}.thenBy{it.name.lowercase()})
-            match.take(if(term.isBlank())20 else 60).forEach{product->
-                val r=card()
-                val line=row()
-                if(product.photo.isNotBlank()){
-                    val image=ImageView(this).apply{
-                        try{setImageURI(Uri.parse(product.photo))}catch(_:Exception){}
-                        scaleType=ImageView.ScaleType.CENTER_CROP
-                    }
-                    line.addView(image,LinearLayout.LayoutParams(dp(56),dp(56)).apply{rightMargin=dp(10)})
-                }
-                val description=column()
-                description.addView(title(product.name,16f))
-                description.addView(info(money(product.price)+" · hay "+product.qty+
-                    (if(product.category.isNotBlank())" · "+product.category else "")))
-                line.addView(description,LinearLayout.LayoutParams(0,-2,1f))
-                line.addView(btn("+"){cartAdd(product)})
-                r.addView(line)
-                catalog.addView(r,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(5)})
-            }
+            catalog.addView(productGrid(match.take(if(term.isBlank())20 else 60),"sale"))
             if(match.isEmpty())catalog.addView(info("No se encontraron productos. Regístrelos en Inventario."))
         }
         filter(saleQuery)
@@ -635,40 +694,14 @@ class MainActivity : Activity() {
     }
     private fun renderInventory(){
         body.addView(title("Inventario"))
-        addButton(body,"+ Registrar producto"){productDialog(null)}
-        addButton(body,"Generar hoja carta con etiquetas QR"){createPdf()}
+        val tools=row()
+        tools.addView(btn("+ Producto"){productDialog(null)},LinearLayout.LayoutParams(0,dp(45),1f).apply{rightMargin=dp(5)})
+        tools.addView(btn("Etiquetas QR"){createPdf()},LinearLayout.LayoutParams(0,dp(45),1f).apply{leftMargin=dp(5)})
+        body.addView(tools,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(10)})
         val list=store.products()
         body.addView(info("Registrados: "+list.size+". Pulse un producto para editar sus datos."))
-        list.forEach{p->
-            val panel=card()
-            val line=row()
-            if(p.photo.isNotBlank()){
-                val image=ImageView(this).apply{
-                    try{setImageURI(Uri.parse(p.photo))}catch(_:Exception){}
-                    scaleType=ImageView.ScaleType.CENTER_CROP
-                    background=GradientDrawable().apply{setColor(cream);cornerRadius=dp(10).toFloat()}
-                    clipToOutline=true
-                }
-                line.addView(image,LinearLayout.LayoutParams(dp(66),dp(66)).apply{rightMargin=dp(9)})
-            }
-            val details=column()
-            details.addView(title(p.name,16f))
-            details.addView(info("Costo "+money(p.cost)+" · Venta "+money(p.price)))
-            details.addView(info("Existencias "+p.qty+(if(p.category.isBlank())"" else " · "+p.category)))
-            line.addView(details,LinearLayout.LayoutParams(0,-2,1f))
-            val buttons=column()
-            val edit=btn("Editar"){productDialog(p)}
-            edit.background=GradientDrawable().apply{setColor(0xff5265c9.toInt());cornerRadius=dp(11).toFloat()}
-            edit.setTextColor(Color.WHITE)
-            buttons.addView(edit,LinearLayout.LayoutParams(dp(98),dp(43)))
-            val add=btn("+ Carrito"){cartAdd(p);tab="Venta";render()}
-            add.background=GradientDrawable().apply{setColor(0xff0e9476.toInt());cornerRadius=dp(11).toFloat()}
-            add.setTextColor(Color.WHITE)
-            buttons.addView(add,LinearLayout.LayoutParams(dp(98),dp(43)).apply{topMargin=dp(6)})
-            line.addView(buttons)
-            panel.addView(line)
-            body.addView(panel,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})
-        }
+        if(list.isEmpty())body.addView(info("Todavía no hay productos registrados."))
+        else body.addView(productGrid(list.sortedBy{it.name.lowercase()},"inventory"))
     }
     private fun productDialog(existing:Product?){
         val wrapper=column().apply{setPadding(dp(14),dp(8),dp(14),0)}
@@ -835,19 +868,10 @@ class MainActivity : Activity() {
         body.addView(list)
         fun filter(query:String){
             list.removeAllViews()
-            store.products().filter{it.name.contains(query,true)||it.barcode.contains(query,true)}
-                .take(if(query.isEmpty())12 else 30).forEach{product->
-                    val line=card()
-                    line.addView(title(product.name,16f))
-                    line.addView(info("Existencia: "+product.qty+" · costo: "+money(product.cost)))
-                    line.addView(btn("+ Añadir a la compra"){
-                        val old=purchaseCart[product.id]
-                        purchaseCart[product.id]=if(old!=null)old.copy(qty=old.qty+1)
-                            else PurchaseItem(product.id,product.name,product.category,1,product.cost,product.price)
-                        render()
-                    })
-                    list.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(6)})
-                }
+            val found=store.products().filter{it.name.contains(query,true)||it.barcode.contains(query,true)}
+                .take(if(query.isEmpty())12 else 30)
+            if(found.isEmpty())list.addView(info("No se encontraron productos."))
+            else list.addView(productGrid(found,"purchase"))
         }
         filter("")
         search.addTextChangedListener(object:TextWatcher{
