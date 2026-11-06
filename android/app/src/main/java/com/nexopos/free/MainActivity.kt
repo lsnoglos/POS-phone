@@ -716,36 +716,8 @@ class MainActivity : Activity() {
         addButton(body,"Generar hoja carta con etiquetas QR"){createPdf()}
         val list=store.products()
         body.addView(info("Registrados: "+list.size+". Pulse un producto para editar sus datos."))
-        list.forEach{p->
-            val panel=card()
-            val line=row()
-            if(p.photo.isNotBlank()){
-                val image=ImageView(this).apply{
-                    try{setImageURI(Uri.parse(p.photo))}catch(_:Exception){}
-                    scaleType=ImageView.ScaleType.CENTER_CROP
-                    background=GradientDrawable().apply{setColor(cream);cornerRadius=dp(10).toFloat()}
-                    clipToOutline=true
-                }
-                line.addView(image,LinearLayout.LayoutParams(dp(66),dp(66)).apply{rightMargin=dp(9)})
-            }
-            val details=column()
-            details.addView(title(p.name,16f))
-            details.addView(info("Costo "+money(p.cost)+" · Venta "+money(p.price)))
-            details.addView(info("Existencias "+p.qty+(if(p.category.isBlank())"" else " · "+p.category)))
-            line.addView(details,LinearLayout.LayoutParams(0,-2,1f))
-            val buttons=column()
-            val edit=btn("Editar"){productDialog(p)}
-            edit.background=GradientDrawable().apply{setColor(0xff5265c9.toInt());cornerRadius=dp(11).toFloat()}
-            edit.setTextColor(Color.WHITE)
-            buttons.addView(edit,LinearLayout.LayoutParams(dp(98),dp(43)))
-            val add=btn("+ Carrito"){cartAdd(p);tab="Venta";render()}
-            add.background=GradientDrawable().apply{setColor(0xff0e9476.toInt());cornerRadius=dp(11).toFloat()}
-            add.setTextColor(Color.WHITE)
-            buttons.addView(add,LinearLayout.LayoutParams(dp(98),dp(43)).apply{topMargin=dp(6)})
-            line.addView(buttons)
-            panel.addView(line)
-            body.addView(panel,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})
-        }
+        if(list.isEmpty())body.addView(info("Todavía no hay productos registrados."))
+        else body.addView(productGrid(list.sortedBy{it.name.lowercase()},"inventory"))
     }
     private fun productDialog(existing:Product?){
         val wrapper=column().apply{setPadding(dp(14),dp(8),dp(14),0)}
