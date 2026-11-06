@@ -599,6 +599,78 @@ class MainActivity : Activity() {
         search.addTextChangedListener(simpleWatcher{value->saleQuery=value;filter(value)})
         body.addView(info("El carrito permanece guardado aunque cambie de pantalla o cierre accidentalmente la aplicación."))
     }
+    private fun receiptText(receipt:ReceiptDetails):String{
+        val sale=receipt.sale
+        val name=ops.setting("name","Mi pulpería")
+        val out=StringBuilder()
+        out.append(name).append("\n")
+        out.append("COMPROBANTE DE VENTA\n")
+        out.append("Fecha: ").append(sale.date).append("\n")
+        out.append("N.º ").append(sale.id.take(8)).append("\n")
+        out.append("Cliente: ").append(sale.customer).append("\n")
+        out.append("------------------------------\n")
+        receipt.lines.forEach{line->
+            out.append(line.name).append(" × ").append(line.quantity).append("\n")
+            out.append("    ").append(money(line.unitPrice)).append(" c/u    ")
+                .append(money(line.unitPrice*line.quantity)).append("\n")
+        }
+        out.append("------------------------------\n")
+        out.append("TOTAL: ").append(money(sale.total)).append("\n")
+        out.append("Pago: ").append(sale.method).append("\n")
+        if(sale.method=="Efectivo"){
+            out.append("Entregado: ")
+                .append(if(receipt.currency=="USD")"US$"+BigDecimal.valueOf(receipt.received,2).toPlainString() else money(receipt.received))
+                .append("\n")
+            if(receipt.currency=="USD")out.append("Tipo de cambio: C$").append(receipt.rate).append("/US$\n")
+            out.append("Equivalente recibido: ").append(money(receipt.receivedNio)).append("\n")
+            out.append("Cambio: ").append(money(receipt.changeNio)).append("\n")
+        }else if(sale.method=="Fiado")out.append("Saldo pendiente: ").append(money(sale.total)).append("\n")
+        out.append("\nMuchas gracias por confiar en ").append(name).append(".")
+        return out.toString()
+    }
+    private fun shareReceipt(receipt:ReceiptDetails){
+        val input=field("Número de WhatsApp (ej. 50588888888)",receipt.phone)
+        AlertDialog.Builder(this).setTitle("Enviar comprobante por WhatsApp")
+            .setMessage("Confirme el número del comprador, con código de país. No se enviará nada sin su confirmación en WhatsApp.")
+            .setView(input).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Abrir WhatsApp"){_,_->
+                val digits=input.text.toString().filter{it.isDigit()}
+                val number=if(digits.length==8)"505"+digits else digits
+                if(number.length !in 10..15){toast("Ingrese un número válido con código de país");return@setPositiveButton}
+                val message=receiptText(receipt)
+                val url="https://wa.me/"+number+"?text="+Uri.encode(message)
+                try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}
+                catch(_:Exception){toast("No se pudo abrir WhatsApp")}
+            }.show()
+    }
+    private fun showReceipt(saleId:String){
+        val receipt=store.receipt(saleId)?:run{toast("No se encontró la venta");return}
+        val page=column().apply{setPadding(dp(17),dp(10),dp(17),dp(10))}
+        val lines=receiptText(receipt).lines()
+        lines.forEachIndexed{index,line->
+            page.addView(TextView(this).apply{
+                text=line;textSize=if(index==0)19f else 14f
+                setTextColor(ink)
+                typeface=if(index==0||line.startsWith("TOTAL:"))Typeface.DEFAULT_BOLD else Typeface.MONOSPACE
+                setPadding(0,dp(2),0,dp(2))
+            })
+        }
+        val scroll=ScrollView(this).apply{addView(page)}
+        val dialog=AlertDialog.Builder(this).setTitle("Recibo de venta")
+            .setView(scroll).setNegativeButton("Cerrar",null)
+            .setPositiveButton("Compartir por WhatsApp"){_,_->shareReceipt(receipt)}.create()
+        dialog.setOnShowListener{
+            dialog.window?.setBackgroundDrawable(ColorDrawable(surface))
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            dialog.window?.setLayout(-1,(resources.displayMetrics.heightPixels*0.82).toInt())
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply{
+                setTextColor(0xff128c61.toInt())
+                setAllCaps(false)
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(ink)
+        }
+        dialog.show()
+    }
     private fun checkoutDialog(total:Long){
         if(ops.openCash()==null){
             AlertDialog.Builder(this).setTitle("Abra un turno de caja")
