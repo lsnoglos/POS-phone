@@ -866,19 +866,10 @@ class MainActivity : Activity() {
         body.addView(list)
         fun filter(query:String){
             list.removeAllViews()
-            store.products().filter{it.name.contains(query,true)||it.barcode.contains(query,true)}
-                .take(if(query.isEmpty())12 else 30).forEach{product->
-                    val line=card()
-                    line.addView(title(product.name,16f))
-                    line.addView(info("Existencia: "+product.qty+" · costo: "+money(product.cost)))
-                    line.addView(btn("+ Añadir a la compra"){
-                        val old=purchaseCart[product.id]
-                        purchaseCart[product.id]=if(old!=null)old.copy(qty=old.qty+1)
-                            else PurchaseItem(product.id,product.name,product.category,1,product.cost,product.price)
-                        render()
-                    })
-                    list.addView(line,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(6)})
-                }
+            val found=store.products().filter{it.name.contains(query,true)||it.barcode.contains(query,true)}
+                .take(if(query.isEmpty())12 else 30)
+            if(found.isEmpty())list.addView(info("No se encontraron productos."))
+            else list.addView(productGrid(found,"purchase"))
         }
         filter("")
         search.addTextChangedListener(object:TextWatcher{
